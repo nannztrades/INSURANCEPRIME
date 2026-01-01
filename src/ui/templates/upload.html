@@ -1,0 +1,91 @@
+
+<!-- src/ui/templates/upload.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agent Upload</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:2rem;background:#f7f9fc;color:#222}
+    .wrap{max-width:720px;margin:auto;background:#fff;border:1px solid #e5e7eb;border-radius:.6rem;padding:1rem}
+    label{display:block;margin-top:.8rem}
+    input,select{width:100%;padding:.6rem;margin-top:.3rem}
+    button{margin-top:1rem;padding:.7rem 1rem;background:#1f6feb;color:#fff;border:none;border-radius:.4rem;cursor:pointer}
+    .note{background:#f1f5f9;border-left:4px solid #1f6feb;padding:.6rem;margin:1rem 0}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Agent Upload</h1>
+    <div class="note">
+      <p>Upload a PDF (Statement, Schedule, or Terminated) for processing.</p>
+    </div>
+
+    <form id="uploadForm">
+      <label>Document Type
+        <select name="doc_type" id="doc_type" required>
+          <option value="statement">Statement</option>
+          <option value="schedule">Schedule</option>
+          <option value="terminated">Terminated</option>
+        </select>
+      </label>
+
+      <label>Agent Code
+        <input type="text" name="agent_code" id="agent_code" required placeholder="e.g., 9518" value="9518">
+      </label>
+
+      <label>Month-Year
+        <select name="month_year" id="month_year" required></select>
+      </label>
+
+      <label>Agent Name (optional)
+        <input type="text" name="agent_name" id="agent_name" placeholder="e.g., Nana Obeng">
+      </label>
+
+      <label>PDF File
+        <input type="file" name="file" id="file" accept=".pdf" required>
+      </label>
+
+      <button type="submit">Upload & Process</button>
+    </form>
+
+    <pre id="result" style="white-space:pre-wrap;margin-top:1rem"></pre>
+  </div>
+
+<script>
+/** Populate Month-Year dropdown with current month going back 24 months (format: "Mon YYYY") */
+(function fillMonthYear(){
+  const sel = document.getElementById('month_year');
+  const fmt = new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' });
+  const now = new Date();
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const label = fmt.format(d); // e.g., "Dec 2025"
+    const opt = document.createElement('option');
+    opt.value = label.replace('.', ''); // remove possible dot in "Sept."
+    opt.textContent = label.replace('.', '');
+    sel.appendChild(opt);
+  }
+})();
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const docType = document.getElementById('doc_type').value;
+  const agentCode = document.getElementById('agent_code').value.trim();
+  const monthYear = document.getElementById('month_year').value.trim();
+  const agentName = document.getElementById('agent_name').value.trim();
+  const file = document.getElementById('file').files[0];
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('agent_code', agentCode);
+  fd.append('month_year', monthYear);
+  fd.append('agent_name', agentName);
+
+  const res = await fetch(`/api/pdf-enhanced/upload/${docType}`, { method: 'POST', body: fd });
+  const text = await res.text();
+  document.getElementById('result').textContent = text;
+});
+</script>
+</body>
+</html>

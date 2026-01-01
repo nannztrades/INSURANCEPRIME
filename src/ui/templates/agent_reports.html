@@ -1,0 +1,80 @@
+
+<!-- src/ui/templates/agent_reports.html -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Agent Reports</title>
+  <style>
+    body{font-family:Segoe UI,Arial;margin:24px}
+    label{display:block;margin-top:12px}
+    table{border-collapse:collapse;width:100%}
+    td,th{border:1px solid #ccc;padding:6px}
+    button{padding:.5rem .9rem;background:#1f6feb;color:#fff;border:none;border-radius:.35rem;cursor:pointer}
+    input,select{padding:.45rem;border:1px solid #e5e7eb;border-radius:.35rem;width:260px}
+  </style>
+</head>
+<body>
+  <h2>Agent Reports</h2>
+  <form id="q">
+    <label>Agent Code <input name="agent_code" id="agent_code" value="9518"/></label>
+    <label>Month Year
+      <select name="month_year" id="month_year"></select>
+    </label>
+    <button type="button" onclick="loadReports()">Load</button>
+    <button type="button" onclick="generateReport()">Generate Report</button>
+  </form>
+
+  <h3>Results</h3>
+  <table id="t"><thead>
+    <tr><th>ID</th><th>Period</th><th>Upload</th><th>PDF</th><th>Size</th><th>Generated</th></tr>
+  </thead><tbody></tbody></table>
+
+<script>
+/** Populate Month-Year with current month going back 24 months (e.g., "Dec 2025"). */
+(function fillMonthYear(){
+  const sel = document.getElementById('month_year');
+  const fmt = new Intl.DateTimeFormat('en', { month: 'short', year: 'numeric' });
+  const now = new Date();
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const label = fmt.format(d).replace('.', '');
+    const opt = document.createElement('option');
+    opt.value = label;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  }
+})();
+
+async function loadReports(){
+    const ac = document.getElementById('agent_code').value;
+    const my = document.getElementById('month_year').value;
+    const res = await fetch(`/api/agent/reports?agent_code=${encodeURIComponent(ac)}&month_year=${encodeURIComponent(my)}`);
+    const j = await res.json();
+    const tbody = document.querySelector('#t tbody');
+    tbody.innerHTML = '';
+    (j.items || []).forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td>${r.report_id}</td><td>${r.report_period}</td><td>${r.upload_id ?? '-'}</td>
+         <td>${r.report_pdf_path?`<a href='/api/agent/reports/download/${r.report_id}' target='_blank'>download</a>`:'-'}</td>
+         <td>${r.report_pdf_size_bytes ?? '-'}</td><td>${r.generated_at}</td>`;
+      tbody.appendChild(tr);
+    });
+}
+
+async function generateReport(){
+    const ac = document.getElementById('agent_code').value;
+    const my = document.getElementById('month_year').value;
+    const fd = new FormData();
+    fd.append('agent_code', ac);
+    fd.append('month_year', my);
+    // No upload_id provided — backend will auto-resolve
+    const res = await fetch('/api/agent/reports/generate', { method:'POST', body: fd });
+    const j = await res.json();
+    alert('Generated: ' + JSON.stringify(j));
+    loadReports();
+}
+</script>
+</body>
+</html>

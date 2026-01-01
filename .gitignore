@@ -1,0 +1,47 @@
+
+# ---- Python / FastAPI / venv / VS Code ----
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.env
+.venv/
+venv/
+dist/
+build/
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Pytest caches
+.pytest_cache/
+
+# Alembic local cache (if any temp files)
+migrations/versions/__pycache__/
+
+# Logs
+logs/
+*.log
+
+# Temp / previews / processed artifacts
+tmp_*/
+previews/
+data/processed/
+reports/*/report.pdf
+reports/*/*.pdf
+
+# Data samples (keep repo light; you can whitelist small sample files if needed)
+data/incoming/
+data/failed/
+data/previews/
+
+# Exports and generated text dumps
+exports/
+
+# Local Windows desktop metadata
+desktop.ini
+
+# Cache dirs if created
+CACHEDIR.TAG

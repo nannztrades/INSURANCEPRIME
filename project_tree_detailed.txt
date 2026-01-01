@@ -1,0 +1,164 @@
+Project tree for: D:\PROJECT\INSURANCELOCAL
+-------------------------------------------
+├── .pytest_cache/
+│   ├── v/
+│   │   └── cache/
+│   │       ├── lastfailed    [101 B | 2026-01-01 10:49]
+│   │       ├── nodeids    [2 KB | 2026-01-01 10:49]
+│   │       └── stepwise    [2 B | 2026-01-01 10:49]
+│   ├── .gitignore    [39 B | 2025-12-31 23:43]
+│   ├── CACHEDIR.TAG    [191 B | 2025-12-31 23:43]
+│   └── README.md    [310 B | 2025-12-31 23:43]
+├── .vscode/
+│   └── settings.json    [150 B | 2025-12-28 21:47]
+├── backup/
+│   └── pipfreeze_py38.txt    [702 B | 2025-12-25 14:06]
+├── data/
+│   ├── failed/
+│   │   ├── 20251224_011255_Terminated businesses for may 2025.pdf    [152 KB | 2025-12-24 01:01]
+│   │   └── 20251224_011349_Terminated businesses for may 2025.pdf    [152 KB | 2025-12-24 01:01]
+│   ├── incoming/
+│   │   ├── Schedule for August.pdf    [160 KB | 2025-12-24 01:01]
+│   │   ├── Schedule for July.pdf    [160 KB | 2025-12-24 01:01]
+│   │   ├── Schedule for June.pdf    [160 KB | 2025-12-24 01:01]
+│   │   ├── Schedule for May.pdf    [159 KB | 2025-12-24 01:01]
+│   │   ├── schedule.pdf    [14 B | 2026-01-01 10:49]
+│   │   ├── Statement for June 2025 2.pdf    [229 KB | 2025-12-26 23:14]
+│   │   ├── Statement for may 2025.pdf    [227 KB | 2025-12-24 01:01]
+│   │   ├── statement.pdf    [14 B | 2026-01-01 10:49]
+│   │   ├── Terminated businesses for June 2025.pdf    [153 KB | 2025-12-24 01:01]
+│   │   ├── Terminated businesses for may 2025.pdf    [152 KB | 2025-12-24 01:01]
+│   │   └── terminated.pdf    [14 B | 2026-01-01 10:49]
+│   ├── previews/
+│   └── processed/
+│       ├── 20251224_011002_9518_schedule_Schedule for August.pdf    [160 KB | 2025-12-24 01:01]
+│       ├── 20251224_011201_9518_statement_Statement for may 2025.pdf    [227 KB | 2025-12-24 01:01]
+│       ├── 20251224_012640_9518_terminated_Terminated businesses for may 2025.pdf    [152 KB | 2025-12-24 01:01]
+│       ├── 20251225_123411_9518_schedule_Schedule for August.pdf    [160 KB | 2025-12-24 01:01]
+│       ├── 20251225_123411_9518_schedule_Schedule for July.pdf    [160 KB | 2025-12-24 01:01]
+│       ├── 20251225_123411_9518_schedule_Schedule for June.pdf    [160 KB | 2025-12-24 01:01]
+│       ├── 20251225_123411_9518_schedule_Schedule for May.pdf    [159 KB | 2025-12-24 01:01]
+│       ├── 20251225_123417_9518_statement_Statement for June 2025 2.pdf    [229 KB | 2025-12-24 01:01]
+│       ├── 20251225_123421_9518_statement_Statement for may 2025.pdf    [227 KB | 2025-12-24 01:01]
+│       ├── 20251225_123422_9518_terminated_Terminated businesses for June 2025.pdf    [153 KB | 2025-12-24 01:01]
+│       ├── 20251225_123422_9518_terminated_Terminated businesses for may 2025.pdf    [152 KB | 2025-12-24 01:01]
+│       ├── 20251226_125624_9518_statement_Statement for June 2025 2.pdf    [229 KB | 2025-12-26 12:56]
+│       ├── 20251226_134450_9518_statement_Statement for June 2025 2.pdf    [229 KB | 2025-12-26 12:56]
+│       ├── 20251226_231433_9518_statement_Statement for June 2025 2.pdf    [229 KB | 2025-12-26 23:14]
+│       ├── 20251226_231441_9518_statement_Statement for June 2025 2.pdf    [229 KB | 2025-12-26 23:14]
+│       ├── 20251226_231450_9518_statement_Statement for June 2025 2.pdf    [229 KB | 2025-12-26 23:14]
+│       ├── 20260101_102928_9518_statement_statement.pdf    [14 B | 2026-01-01 00:47]
+│       ├── 20260101_102932_9518_statement_statement.pdf    [14 B | 2026-01-01 10:29]
+│       ├── 20260101_103543_9518_statement_statement.pdf    [14 B | 2026-01-01 10:29]
+│       ├── 20260101_103547_9518_statement_statement.pdf    [14 B | 2026-01-01 10:35]
+│       ├── 20260101_104331_9518_statement_statement.pdf    [14 B | 2026-01-01 10:35]
+│       ├── 20260101_104336_9518_statement_statement.pdf    [14 B | 2026-01-01 10:43]
+│       ├── 20260101_104908_9518_statement_statement.pdf    [14 B | 2026-01-01 10:43]
+│       └── 20260101_104912_9518_statement_statement.pdf    [14 B | 2026-01-01 10:49]
+├── exports/
+│   ├── ALL_PY_SOURCES_20251229_125728.txt    [435 KB | 2025-12-29 12:57]
+│   ├── ALL_PY_SOURCES_20251229_162953.txt    [435 KB | 2025-12-29 16:29]
+│   ├── ALL_PY_SOURCES_20251229_172207.txt    [437 KB | 2025-12-29 17:22]
+│   ├── ALL_PY_SOURCES_20251231_230415.txt    [438 KB | 2025-12-31 23:04]
+│   └── ALL_PY_SOURCES_20260101_114412.txt    [466 KB | 2026-01-01 11:44]
+├── logs/
+│   ├── ingestion.jsonl    [3 KB | 2025-12-26 13:44]
+│   └── ingestion.log    [2 KB | 2025-12-26 13:44]
+├── migrations/
+│   ├── versions/
+│   ├── env.py    [2 KB | 2026-01-01 01:04]
+│   ├── README    [38 B | 2026-01-01 01:04]
+│   └── script.py.mako    [635 B | 2026-01-01 01:04]
+├── reports/
+│   └── 9518/
+│       ├── 2025-06/
+│       │   ├── 1_report_20251225_200743.pdf    [2 KB | 2025-12-25 20:07]
+│       │   ├── 1_report_20251225_201144.pdf    [2 KB | 2025-12-25 20:11]
+│       │   ├── 1_report_20251225_215531.pdf    [38 KB | 2025-12-25 21:55]
+│       │   ├── report.pdf    [2 KB | 2025-12-25 20:02]
+│       │   ├── report_20251226_235145.pdf    [2 KB | 2025-12-26 23:51]
+│       │   └── report_20251227_002414.pdf    [6 KB | 2025-12-27 00:24]
+│       └── May-2025/
+├── src/
+│   ├── api/
+│   │   ├── __init__.py    [0 B | 2025-12-26 13:40]
+│   │   ├── admin_reports.py    [34 KB | 2025-12-29 16:29]
+│   │   ├── agent_api.py    [6 KB | 2025-12-29 17:03]
+│   │   ├── agent_missing.py    [3 KB | 2025-12-29 02:35]
+│   │   ├── agent_reports.py    [7 KB | 2025-12-27 00:21]
+│   │   ├── auth_api.py    [6 KB | 2025-12-29 00:50]
+│   │   ├── disparities.py    [5 KB | 2025-12-27 13:19]
+│   │   ├── ingestion_api.py    [8 KB | 2025-12-29 10:58]
+│   │   ├── superuser_api.py    [8 KB | 2025-12-29 17:01]
+│   │   ├── ui_pages.py    [14 KB | 2025-12-29 01:00]
+│   │   ├── uploads.py    [5 KB | 2025-12-29 02:33]
+│   │   └── uploads_secure.py    [3 KB | 2026-01-01 00:39]
+│   ├── audit/
+│   │   └── discrepancies.py    [4 KB | 2025-12-26 07:38]
+│   ├── cli/
+│   │   ├── __init__.py    [0 B | 2025-12-24 01:08]
+│   │   ├── diagnose_agent_import.py    [272 B | 2025-12-26 22:37]
+│   │   ├── expected_for_upload.py    [12 KB | 2025-12-26 12:13]
+│   │   ├── export_all_py_to_txt.py    [5 KB | 2025-12-26 17:55]
+│   │   ├── ingest_bulk.py    [7 KB | 2025-12-29 02:51]
+│   │   ├── ingest_one.py    [5 KB | 2025-12-29 02:51]
+│   │   ├── list_routes.py    [2 KB | 2025-12-27 21:50]
+│   │   ├── show_tree.py    [2 KB | 2025-12-24 00:35]
+│   │   └── show_tree_detailed.py    [2 KB | 2025-12-24 00:53]
+│   ├── ingestion/
+│   │   ├── __init__.py    [0 B | 2025-12-24 01:08]
+│   │   ├── audit_flags.py    [3 KB | 2025-12-25 12:28]
+│   │   ├── commission.py    [9 KB | 2025-12-25 18:54]
+│   │   ├── db.py    [495 B | 2025-12-24 00:26]
+│   │   ├── parser_db_integration.py    [11 KB | 2025-12-31 23:41]
+│   │   └── run_logger.py    [2 KB | 2025-12-25 13:58]
+│   ├── parser/
+│   │   ├── __init__.py    [0 B | 2025-12-24 01:09]
+│   │   └── parser_db_ready_fixed_Version4.py    [30 KB | 2025-12-21 11:30]
+│   ├── reports/
+│   │   ├── monthly_reports copy.py    [30 KB | 2025-12-27 00:21]
+│   │   └── monthly_reports.py    [28 KB | 2025-12-27 00:19]
+│   ├── services/
+│   │   ├── __init__.py    [0 B | 2025-12-26 14:05]
+│   │   ├── active_policies.py    [4 KB | 2025-12-26 14:33]
+│   │   └── auth_service.py    [3 KB | 2025-12-28 23:05]
+│   ├── ui/
+│   │   ├── templates/
+│   │   │   ├── agent_reports.html    [3 KB | 2025-12-27 00:07]
+│   │   │   ├── landing.html    [1 KB | 2025-12-26 22:37]
+│   │   │   └── upload.html    [3 KB | 2025-12-26 23:33]
+│   │   ├── admin_dashboard copy.py    [41 KB | 2025-12-27 22:58]
+│   │   ├── admin_dashboard.py    [46 KB | 2025-12-28 09:00]
+│   │   ├── agent_dashboard.py    [31 KB | 2025-12-28 07:53]
+│   │   └── superuser_dashboard.py    [36 KB | 2025-12-28 08:12]
+│   ├── utils/
+│   ├── __init__.py    [0 B | 2025-12-26 14:10]
+│   ├── main.py    [6 KB | 2025-12-29 02:35]
+│   └── main.py.bak    [4 KB | 2025-12-27 18:55]
+├── tests/
+│   ├── conftest.py    [2 KB | 2026-01-01 10:42]
+│   ├── test_ingestion_e2e_integration.py    [1 KB | 2026-01-01 00:05]
+│   ├── test_parser_agent_meta.py    [1 KB | 2025-12-31 23:06]
+│   ├── test_parser_dates_money.py    [0 B | 2025-12-31 23:07]
+│   ├── test_parser_db_integration_unit.py    [1 KB | 2026-01-01 10:28]
+│   ├── test_smoke_endpoints.py    [1 KB | 2026-01-01 10:48]
+│   ├── test_uploads_api_negative.py    [3 KB | 2026-01-01 10:38]
+│   ├── test_uploads_api_unit.py    [2 KB | 2026-01-01 00:21]
+│   ├── test_uploads_api_unit_schedule.py    [2 KB | 2026-01-01 10:26]
+│   ├── test_uploads_api_unit_terminated.py    [2 KB | 2026-01-01 10:27]
+│   ├── test_uploads_secure_roles.py    [2 KB | 2026-01-01 10:34]
+│   └── test_uploads_secure_unit.py    [1 KB | 2026-01-01 10:27]
+├── .env    [4 KB | 2025-12-29 00:56]
+├── 123    [22 B | 2025-12-26 13:25]
+├── alembic.ini    [4 KB | 2026-01-01 01:04]
+├── desktop.ini    [114 B | 2025-12-23 23:50]
+├── endpoints.csv    [0 B | 2025-12-27 21:51]
+├── if i ever want to hard delete agent in dbeaver.txt    [332 B | 2025-12-27 23:21]
+├── list_routes.py    [2 KB | 2025-12-27 21:50]
+├── project_tree.txt    [597 B | 2025-12-24 00:51]
+├── project_tree_detailed.txt    [8 KB | 2025-12-31 23:17]
+├── pyrightconfig.json    [173 B | 2025-12-28 21:48]
+├── pytest.ini    [43 B | 2026-01-01 00:41]
+├── requirements.txt    [417 B | 2025-12-29 17:38]
+├── tmp_expected.py    [225 B | 2025-12-25 16:11]
+└── upgrade_py39_log.txt    [107 B | 2025-12-25 14:20]

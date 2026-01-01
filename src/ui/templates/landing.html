@@ -1,0 +1,38 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>InsuranceLocal — Dashboard</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:2rem;background:#f7f9fc;color:#222}
+    .wrap{max-width:960px;margin:auto}
+    header{margin-bottom:2rem}
+    a.button{display:inline-block;padding:.7rem 1rem;margin:.3rem;background:#1f6feb;color:#fff;text-decoration:none;border-radius:.4rem}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:.6rem;padding:1rem}
+    .card h3{margin-top:0}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>InsuranceLocal</h1>
+      <p>Upload PDFs, compute expected commissions, and generate monthly reports.</p>
+      <p>
+        <a class="button" href="/ui/agent/upload">Agent Upload</a>
+        <a class="button" href="/ui/agent/reports">Agent Reports</a>
+        <a class="button" href="/ui/admin/uploads">Admin Uploads</a>
+        <a class="button" href="/docs">API Docs</a>
+      </p>
+    </header>
+    <section class="grid">
+      <div class="card">
+        <h3>Health</h3>
+        <p>Service status & registered modules.</p>
+        <p><a href="/api/info" target="_blank">/api/info</a></p>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
