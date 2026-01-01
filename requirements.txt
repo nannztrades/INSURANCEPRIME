@@ -13,9 +13,10 @@ alembic
 # PDF Processing
 pdfplumber==0.10.3
 PyPDF2==3.0.1
+pypdf>=3.0.0
 reportlab>=3.6
 
-# Data Processing - FIX: Pin compatible numpy version
+# Data Processing - Pin compatible numpy version
 numpy>=1.24.0,<2.0.0
 pandas==2.0.3
 python-dateutil==2.8.2
