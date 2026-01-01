@@ -1,45 +1,46 @@
+# migrations/env.py
 from logging.config import fileConfig
 import os
 from sqlalchemy import engine_from_config, pool
 from alembic import context
-
-# Import Base from models
-from src.models import Base
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set target_metadata from your models
-target_metadata = Base. metadata
+# ✅ Import Base from src.models (NOT src.ingestion.models)
+try:
+    from src.models import Base
+    target_metadata = Base.metadata
+except ImportError as e:
+    print(f"WARNING: Could not import Base metadata: {e}")
+    target_metadata = None
 
-def get_url():
-    """
-    Build DATABASE_URL from Railway environment variables. 
-    Railway provides:  MYSQLHOST, MYSQLPORT, MYSQLUSER, MYSQLPASSWORD, MYSQLDATABASE
-    """
-    # Try Railway-style variables first
-    host = os.getenv("MYSQLHOST")
-    port = os.getenv("MYSQLPORT", "3306")
-    user = os.getenv("MYSQLUSER")
-    password = os.getenv("MYSQLPASSWORD")
-    database = os.getenv("MYSQLDATABASE")
+
+def get_url() -> str:
+    """Get database URL from environment variables."""
+    # Railway provides MYSQL_URL
+    url = os.getenv("MYSQL_URL")
+    if url:
+        # Railway uses mysql:// but we need mysql+pymysql://
+        if url.startswith("mysql://"):
+            url = url.replace("mysql://", "mysql+pymysql://", 1)
+        return url
     
-    # Fallback to standard DB_* variables
-    if not all([host, user, password, database]):
-        host = os.getenv("DB_HOST")
-        port = os.getenv("DB_PORT", "3306")
-        user = os.getenv("DB_USER")
-        password = os.getenv("DB_PASSWORD")
-        database = os.getenv("DB_NAME")
+    # Fallback:  construct from individual vars
+    user = os.getenv("MYSQLUSER") or os.getenv("DB_USER")
+    password = os.getenv("MYSQLPASSWORD") or os.getenv("DB_PASSWORD")
+    host = os.getenv("MYSQLHOST") or os.getenv("DB_HOST", "localhost")
+    port = os.getenv("MYSQLPORT") or os.getenv("DB_PORT", "3306")
+    database = os.getenv("MYSQLDATABASE") or os.getenv("DB_NAME", "railway")
     
-    # Final fallback:  DATABASE_URL (if provided as single string)
-    if not all([host, user, password, database]):
-        return os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+    if user and password and host and database:
+        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
     
-    # Build MySQL URL with pymysql driver
-    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+    # Final fallback:  alembic. ini (local dev only)
+    return config.get_main_option("sqlalchemy.url") or ""
+
 
 def run_migrations_offline() -> None:
     url = get_url()
@@ -49,13 +50,19 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
-
     with context.begin_transaction():
         context.run_migrations()
 
+
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = get_url()
+    url = get_url()
+    
+    # ✅ Type-safe:  Ensure url is not None
+    if not url:
+        raise ValueError("Database URL not configured.  Set MYSQL_URL or DB_* environment variables.")
+    
+    configuration["sqlalchemy.url"] = url
     
     connectable = engine_from_config(
         configuration,
@@ -68,9 +75,9 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata
         )
-
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()
