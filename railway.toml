@@ -1,0 +1,8 @@
+
+# railway.toml — service metadata (optional)
+[build]
+# Use Docker (Railway auto-detects Dockerfile)
+builder = "docker"
+
+[deploy]
+# Simple deploy; Railway sets PORT
