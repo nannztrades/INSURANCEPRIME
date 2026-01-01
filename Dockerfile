@@ -1,4 +1,3 @@
-
 # Dockerfile — InsuranceLocal FastAPI app (Railway-ready)
 FROM python:3.11-slim
 
@@ -26,8 +25,8 @@ RUN pip install --upgrade pip \
 # Copy app code
 COPY . /app
 
-# Railway sets PORT; uvicorn must bind 0.0.0.0:$PORT
-ENV PORT=8080
+# Expose port (Railway will set this dynamically)
+EXPOSE 8080
 
-# Default command
-CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Default command - use shell form to allow $PORT variable expansion
+CMD uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8080}
