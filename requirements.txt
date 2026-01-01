@@ -1,33 +1,17 @@
-# Core FastAPI & Web Server
-fastapi>=0.110.0
-uvicorn[standard]>=0.24.0
-python-multipart>=0.0.9
-jinja2>=3.1,<4
-
-# Database & ORM
-SQLAlchemy==2.0.23
-PyMySQL==1.1.0
-mysql-connector-python==8.2.0
-alembic
-
-# PDF Processing
-pdfplumber==0.10.3
-PyPDF2==3.0.1
-pypdf>=3.0.0
-reportlab>=3.6
-
-# Data Processing - Pin compatible numpy version
-numpy>=1.24.0,<2.0.0
-pandas==2.0.3
-python-dateutil==2.8.2
-
-# Cloud Storage
-boto3>=1.26.0
-google-cloud-storage>=2.10.0
-
-# Utilities
+fastapi==0.115.6
+uvicorn==0.33.0
+python-multipart==0.0.20
 python-dotenv==1.0.1
-click==8.1.7
-
-# Testing
-pytest>=8.2
+pymysql==1.1.1
+pandas==2.0.3
+numpy==1.24.4
+pdfplumber==0.11.4
+openpyxl==3.1.5
+Jinja2==3.1.4
+pytest==8.3.4
+httpx==0.28.1
+alembic==1.14.0
+sqlalchemy==2.0.36
+cryptography==44.0.0
+PyJWT==2.10.1
+pypdf==5.1.0

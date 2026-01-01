@@ -1,9 +1,11 @@
 Project tree for: D:\PROJECT\INSURANCELOCAL
 -------------------------------------------
 ├── data/
+├── exports/
+│   └── ALL_PY_SOURCES_20260101_201800.txt    [390 KB | 2026-01-01 20:18]
 ├── migrations/
 │   ├── versions/
-│   ├── env.py    [2 KB | 2026-01-01 01:04]
+│   ├── env.py    [3 KB | 2026-01-01 20:12]
 │   ├── README    [38 B | 2026-01-01 01:04]
 │   └── script.py.mako    [635 B | 2026-01-01 01:04]
 ├── src/
@@ -77,9 +79,8 @@ Project tree for: D:\PROJECT\INSURANCELOCAL
 ├── .gitignore    [689 B | 2026-01-01 12:46]
 ├── alembic.ini    [4 KB | 2026-01-01 01:04]
 ├── cleanup_insurance_local.ps1    [5 KB | 2026-01-01 16:45]
-├── Dockerfile    [897 B | 2026-01-01 13:03]
-├── project_tree_detailed.txt    [5 KB | 2026-01-01 16:45]
+├── Dockerfile    [913 B | 2026-01-01 17:24]
+├── project_tree_detailed.txt    [5 KB | 2026-01-01 17:01]
 ├── pyrightconfig.json    [173 B | 2025-12-28 21:48]
 ├── pytest.ini    [642 B | 2026-01-01 12:10]
-├── railway.toml    [175 B | 2026-01-01 13:05]
-└── requirements.txt    [417 B | 2025-12-29 17:38]
+└── requirements.txt    [539 B | 2026-01-01 18:48]
