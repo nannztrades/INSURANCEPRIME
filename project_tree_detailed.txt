@@ -1,0 +1,85 @@
+Project tree for: D:\PROJECT\INSURANCELOCAL
+-------------------------------------------
+├── data/
+├── migrations/
+│   ├── versions/
+│   ├── env.py    [2 KB | 2026-01-01 01:04]
+│   ├── README    [38 B | 2026-01-01 01:04]
+│   └── script.py.mako    [635 B | 2026-01-01 01:04]
+├── src/
+│   ├── api/
+│   │   ├── __init__.py    [0 B | 2025-12-26 13:40]
+│   │   ├── admin_reports.py    [34 KB | 2025-12-29 16:29]
+│   │   ├── agent_api.py    [6 KB | 2025-12-29 17:03]
+│   │   ├── agent_missing.py    [3 KB | 2025-12-29 02:35]
+│   │   ├── agent_reports.py    [7 KB | 2025-12-27 00:21]
+│   │   ├── auth_api.py    [6 KB | 2025-12-29 00:50]
+│   │   ├── disparities.py    [5 KB | 2025-12-27 13:19]
+│   │   ├── ingestion_api.py    [8 KB | 2025-12-29 10:58]
+│   │   ├── superuser_api.py    [8 KB | 2025-12-29 17:01]
+│   │   ├── ui_pages.py    [14 KB | 2025-12-29 01:00]
+│   │   ├── uploads.py    [5 KB | 2025-12-29 02:33]
+│   │   └── uploads_secure.py    [3 KB | 2026-01-01 00:39]
+│   ├── audit/
+│   │   └── discrepancies.py    [4 KB | 2025-12-26 07:38]
+│   ├── cli/
+│   │   ├── __init__.py    [0 B | 2025-12-24 01:08]
+│   │   ├── diagnose_agent_import.py    [272 B | 2025-12-26 22:37]
+│   │   ├── expected_for_upload.py    [12 KB | 2025-12-26 12:13]
+│   │   ├── export_all_py_to_txt.py    [5 KB | 2025-12-26 17:55]
+│   │   ├── ingest_bulk.py    [7 KB | 2025-12-29 02:51]
+│   │   ├── ingest_one.py    [5 KB | 2025-12-29 02:51]
+│   │   ├── list_routes.py    [2 KB | 2025-12-27 21:50]
+│   │   ├── show_tree.py    [2 KB | 2025-12-24 00:35]
+│   │   └── show_tree_detailed.py    [2 KB | 2025-12-24 00:53]
+│   ├── ingestion/
+│   │   ├── __init__.py    [0 B | 2025-12-24 01:08]
+│   │   ├── audit_flags.py    [3 KB | 2025-12-25 12:28]
+│   │   ├── commission.py    [9 KB | 2025-12-25 18:54]
+│   │   ├── db.py    [495 B | 2025-12-24 00:26]
+│   │   ├── parser_db_integration.py    [11 KB | 2025-12-31 23:41]
+│   │   └── run_logger.py    [2 KB | 2025-12-25 13:58]
+│   ├── parser/
+│   │   ├── __init__.py    [0 B | 2025-12-24 01:09]
+│   │   └── parser_db_ready_fixed_Version4.py    [30 KB | 2025-12-21 11:30]
+│   ├── reports/
+│   │   └── monthly_reports.py    [28 KB | 2025-12-27 00:19]
+│   ├── services/
+│   │   ├── __init__.py    [0 B | 2025-12-26 14:05]
+│   │   ├── active_policies.py    [4 KB | 2025-12-26 14:33]
+│   │   └── auth_service.py    [3 KB | 2025-12-28 23:05]
+│   ├── ui/
+│   │   ├── templates/
+│   │   │   ├── agent_reports.html    [3 KB | 2025-12-27 00:07]
+│   │   │   ├── landing.html    [1 KB | 2025-12-26 22:37]
+│   │   │   └── upload.html    [3 KB | 2025-12-26 23:33]
+│   │   ├── admin_dashboard.py    [46 KB | 2025-12-28 09:00]
+│   │   ├── agent_dashboard.py    [31 KB | 2025-12-28 07:53]
+│   │   └── superuser_dashboard.py    [36 KB | 2025-12-28 08:12]
+│   ├── utils/
+│   ├── __init__.py    [0 B | 2025-12-26 14:10]
+│   └── main.py    [6 KB | 2025-12-29 02:35]
+├── tests/
+│   ├── conftest.py    [2 KB | 2026-01-01 12:01]
+│   ├── test_ingestion_e2e_integration.py    [1 KB | 2026-01-01 00:05]
+│   ├── test_parser_agent_meta.py    [1 KB | 2025-12-31 23:06]
+│   ├── test_parser_dates_money.py    [0 B | 2025-12-31 23:07]
+│   ├── test_parser_db_integration_unit.py    [1 KB | 2026-01-01 10:28]
+│   ├── test_smoke_endpoints.py    [1 KB | 2026-01-01 10:48]
+│   ├── test_uploads_api_negative.py    [3 KB | 2026-01-01 10:38]
+│   ├── test_uploads_api_unit.py    [2 KB | 2026-01-01 00:21]
+│   ├── test_uploads_api_unit_schedule.py    [2 KB | 2026-01-01 10:26]
+│   ├── test_uploads_api_unit_terminated.py    [2 KB | 2026-01-01 10:27]
+│   ├── test_uploads_secure_roles.py    [2 KB | 2026-01-01 10:34]
+│   └── test_uploads_secure_unit.py    [1 KB | 2026-01-01 10:27]
+├── .env    [4 KB | 2025-12-29 00:56]
+├── .env.example    [2 KB | 2026-01-01 13:15]
+├── .gitignore    [689 B | 2026-01-01 12:46]
+├── alembic.ini    [4 KB | 2026-01-01 01:04]
+├── cleanup_insurance_local.ps1    [5 KB | 2026-01-01 16:45]
+├── Dockerfile    [897 B | 2026-01-01 13:03]
+├── project_tree_detailed.txt    [5 KB | 2026-01-01 16:45]
+├── pyrightconfig.json    [173 B | 2025-12-28 21:48]
+├── pytest.ini    [642 B | 2026-01-01 12:10]
+├── railway.toml    [175 B | 2026-01-01 13:05]
+└── requirements.txt    [417 B | 2025-12-29 17:38]
