@@ -2,10 +2,11 @@ Project tree for: D:\PROJECT\INSURANCELOCAL
 -------------------------------------------
 ├── data/
 ├── exports/
-│   └── ALL_PY_SOURCES_20260101_201800.txt    [390 KB | 2026-01-01 20:18]
+│   ├── ALL_PY_SOURCES_20260101_201800.txt    [390 KB | 2026-01-01 20:18]
+│   └── ALL_PY_SOURCES_20260102_203222.txt    [394 KB | 2026-01-02 20:32]
 ├── migrations/
 │   ├── versions/
-│   ├── env.py    [3 KB | 2026-01-01 20:12]
+│   ├── env.py    [3 KB | 2026-01-01 21:35]
 │   ├── README    [38 B | 2026-01-01 01:04]
 │   └── script.py.mako    [635 B | 2026-01-01 01:04]
 ├── src/
@@ -38,7 +39,7 @@ Project tree for: D:\PROJECT\INSURANCELOCAL
 │   │   ├── __init__.py    [0 B | 2025-12-24 01:08]
 │   │   ├── audit_flags.py    [3 KB | 2025-12-25 12:28]
 │   │   ├── commission.py    [9 KB | 2025-12-25 18:54]
-│   │   ├── db.py    [495 B | 2025-12-24 00:26]
+│   │   ├── db.py    [829 B | 2026-01-01 21:35]
 │   │   ├── parser_db_integration.py    [11 KB | 2025-12-31 23:41]
 │   │   └── run_logger.py    [2 KB | 2025-12-25 13:58]
 │   ├── parser/
@@ -60,7 +61,8 @@ Project tree for: D:\PROJECT\INSURANCELOCAL
 │   │   └── superuser_dashboard.py    [36 KB | 2025-12-28 08:12]
 │   ├── utils/
 │   ├── __init__.py    [0 B | 2025-12-26 14:10]
-│   └── main.py    [6 KB | 2025-12-29 02:35]
+│   ├── main.py    [6 KB | 2025-12-29 02:35]
+│   └── models.py    [3 KB | 2026-01-01 20:57]
 ├── tests/
 │   ├── conftest.py    [2 KB | 2026-01-01 12:01]
 │   ├── test_ingestion_e2e_integration.py    [1 KB | 2026-01-01 00:05]
@@ -80,7 +82,7 @@ Project tree for: D:\PROJECT\INSURANCELOCAL
 ├── alembic.ini    [4 KB | 2026-01-01 01:04]
 ├── cleanup_insurance_local.ps1    [5 KB | 2026-01-01 16:45]
 ├── Dockerfile    [913 B | 2026-01-01 17:24]
-├── project_tree_detailed.txt    [5 KB | 2026-01-01 17:01]
+├── project_tree_detailed.txt    [5 KB | 2026-01-01 20:48]
 ├── pyrightconfig.json    [173 B | 2025-12-28 21:48]
 ├── pytest.ini    [642 B | 2026-01-01 12:10]
-└── requirements.txt    [539 B | 2026-01-01 18:48]
+└── requirements.txt    [297 B | 2026-01-01 20:51]

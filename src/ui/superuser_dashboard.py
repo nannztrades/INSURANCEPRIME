@@ -1,13 +1,20 @@
 
-# src/ui/superuser_dashboard.py
 from __future__ import annotations
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse, HTMLResponse
+from src.api.ui_pages import _get_current_user
 
 router = APIRouter(tags=["Superuser Dashboard"])
 
 @router.get("/ui/superuser", response_class=HTMLResponse)
-async def superuser_dashboard():
+async def superuser_dashboard(request: Request):
+    # ---- Cookie-based guard ----
+    u = _get_current_user(request) or {}
+    role = str(u.get("role") or "").lower()
+    if role != "superuser":
+        return RedirectResponse(url="/ui/login?role=superuser", status_code=302)
+
+    # ---- Full UI ----
     html = r"""
 <!doctype html>
 <html>
@@ -50,9 +57,9 @@ async def superuser_dashboard():
     </div>
 
     <div class="mb-3">
-      <a href="/ui/" class="nav-link"><i class="bi bi-house me-2"></i>Landing</a>
-      <a href="/ui/agent" class="nav-link"><i class="bi bi-person-circle me-2"></i>Agent Dashboard</a>
-      <a href="/ui/admin" class="nav-link"><i class="bi bi-gear me-2"></i>Admin Dashboard</a>
+      <a class="nav-link" href="/ui/"><i class="bi bi-house me-2"></i>Landing</a>
+      <a class="nav-link" href="/ui/agent"><i class="bi bi-person-circle me-2"></i>Agent Dashboard</a>
+      <a class="nav-link" href="/ui/admin"><i class="bi bi-gear me-2"></i>Admin Dashboard</a>
       <a class="nav-link" onclick="logout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
     </div>
 
@@ -73,7 +80,7 @@ async def superuser_dashboard():
     <a class="nav-link" onclick="showSection('monthly',event);"><i class="bi bi-diagram-3 me-2"></i>Monthly Reports</a>
 
     <div class="mt-3">
-      <a href="/docs" target="_blank" class="nav-link"><i class="bi bi-journal-code me-2"></i>API Docs</a>
+      <a class="nav-link" href="/docs" target="_blank"><i class="bi bi-journal-code me-2"></i>API Docs</a>
     </div>
   </aside>
 
@@ -246,7 +253,7 @@ async def superuser_dashboard():
       <div class="table-responsive">
         <table class="table table-sm table-dark table-hover" id="missing_table">
           <thead><tr><th>Policy</th><th>Last Seen Month</th><th>Last Premium</th></tr></thead>
-          <tbody id="missing_tbody"><tr><td colspan="3" class="text-muted text-center">Select agent & month</td></tr></tbody>
+          <tbody id="missing_tbody"><tr><td colspan="3" class="text-muted text-center">Select agent &amp; month</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -291,7 +298,6 @@ async def superuser_dashboard():
   </main>
 
   <script>
-    // -------- Identity headers for wrapper APIs --------
     function saveIdentity(){
       localStorage.setItem('id_user_id', document.getElementById('id_user_id').value.trim());
       localStorage.setItem('id_role',  document.getElementById('id_role').value.trim());
@@ -307,7 +313,6 @@ async def superuser_dashboard():
     }
     function logout(){ try{ localStorage.clear(); sessionStorage.clear(); }catch(e){} window.location.href = "/ui/"; }
 
-    // -------- Section switcher --------
     function showSection(id, ev){
       document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
       let target = null;
@@ -317,7 +322,6 @@ async def superuser_dashboard():
       const sec = document.getElementById(id); if (sec) sec.classList.add('active');
     }
 
-    // -------- Month labels --------
     function generateMonths(n=36){
       const out=[], abbr=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       const now=new Date(); let y=now.getFullYear(), m=now.getMonth();
@@ -330,7 +334,6 @@ async def superuser_dashboard():
         .forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.innerHTML=''; labels.forEach(l=>{ const opt=document.createElement('option'); opt.value=l; opt.textContent=l; el.appendChild(opt); }); });
     }
 
-    // -------- Uploads --------
     async function loadUploads(){
       const params=new URLSearchParams();
       const ac=document.getElementById('up_agent').value.trim();
@@ -357,10 +360,11 @@ async def superuser_dashboard():
       const mm=document.getElementById('up_month').value;
       const dt=document.getElementById('up_doc').value;
       if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(dt) params.append('doc_type',dt);
-      window.open(`/api/admin/uploads.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/uploads.csv?${params.toString()}`,'_blank');
     }
     async function deactivateUpload(id){ await fetch(`/api/admin/uploads/${id}`,{method:'DELETE'}); await loadUploads(); }
     async function enableUpload(id){ await fetch(`/api/admin/uploads/enable/${id}`,{method:'POST'}); await loadUploads(); }
+
     async function deactivateOlder(){
       const body={ agent_code: document.getElementById('dec_agent').value.trim(),
                    month_year: document.getElementById('dec_month').value,
@@ -369,7 +373,6 @@ async def superuser_dashboard():
       const j=await r.json(); document.getElementById('dec_result').innerText=JSON.stringify(j); await loadUploads();
     }
 
-    // -------- Tracker (superuser wrappers) --------
     async function loadTracker(){
       const ac=document.getElementById('trk_agent').value.trim();
       if(!ac){ document.getElementById('trk_tbody').innerHTML='<tr><td colspan="3" class="text-muted text-center">Choose agent</td></tr>'; return; }
@@ -390,7 +393,6 @@ async def superuser_dashboard():
       window.open(`/api/superuser/uploads/tracker.csv?agent_code=${encodeURIComponent(ac)}&months_back=36`, '_blank');
     }
 
-    // -------- Statements --------
     async function loadStatements(){
       const params=new URLSearchParams();
       const ac=document.getElementById('stmt_agent').value.trim();
@@ -406,7 +408,7 @@ async def superuser_dashboard():
         tr.innerHTML = `
           <td>${s.statement_id}</td><td>${s.agent_code||''}</td><td>${s.policy_no||''}</td>
           <td>${s.holder||''}</td><td>${s.policy_type||''}</td><td>${s.pay_date||''}</td>
-          <td>${s.premium||''}</td><td>${s.com_amt||''}</td><td>${s.MONTH_YEAR||''}</td>`;
+          <td>${s.premium||''}</td><td>${s.com_amt||''}</td><td>${s.month_year || s.MONTH_YEAR || ''}</td>`;
         tb.appendChild(tr);
       });
     }
@@ -416,10 +418,9 @@ async def superuser_dashboard():
       const mm=document.getElementById('stmt_month').value;
       const po=document.getElementById('stmt_policy').value.trim();
       if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po);
-      window.open(`/api/admin/statements.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/statements.csv?${params.toString()}`,'_blank');
     }
 
-    // -------- Schedules --------
     async function loadSchedules(){
       const params=new URLSearchParams();
       const ac=document.getElementById('sch_agent').value.trim();
@@ -445,10 +446,9 @@ async def superuser_dashboard():
       const mm=document.getElementById('sch_month').value;
       const lo=document.getElementById('sch_latest').value || '1';
       if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(ac) params.append('latest_only',lo);
-      window.open(`/api/admin/schedule.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/schedule.csv?${params.toString()}`,'_blank');
     }
 
-    // -------- Terminated --------
     async function loadTerminated(){
       const params=new URLSearchParams();
       const ac=document.getElementById('ter_agent').value.trim();
@@ -474,10 +474,9 @@ async def superuser_dashboard():
       const mm=document.getElementById('ter_month').value;
       const po=document.getElementById('ter_policy').value.trim();
       if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po);
-      window.open(`/api/admin/terminated.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/terminated.csv?${params.toString()}`,'_blank');
     }
 
-    // -------- Active Policies --------
     async function loadActivePolicies(){
       const params=new URLSearchParams();
       const ac=document.getElementById('ap_agent').value.trim();
@@ -502,10 +501,9 @@ async def superuser_dashboard():
       const mm=document.getElementById('ap_month').value;
       const st=document.getElementById('ap_status').value;
       if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(st) params.append('status',st);
-      window.open(`/api/admin/active-policies.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/active-policies.csv?${params.toString()}`,'_blank');
     }
 
-    // -------- Missing (superuser wrappers) --------
     async function loadMissing(){
       const ac=document.getElementById('mp_agent').value.trim();
       const mm=document.getElementById('mp_month').value;
@@ -529,7 +527,6 @@ async def superuser_dashboard():
       window.open(`/api/superuser/missing.csv?agent_code=${encodeURIComponent(ac)}&month_year=${encodeURIComponent(mm)}`,'_blank');
     }
 
-    // -------- Audit Flags (superuser wrappers) --------
     async function loadAuditFlags(){
       const params=new URLSearchParams();
       const ac=document.getElementById('af_agent').value.trim();
@@ -557,7 +554,6 @@ async def superuser_dashboard():
       window.open(`/api/superuser/audit-flags.csv?${params.toString()}`,'_blank');
     }
 
-    // -------- Monthly report generator (admin endpoint) --------
     async function generateMonthlyAgentMonth(){
       const ac=document.getElementById('mr_agent').value.trim();
       const mm=document.getElementById('mr_month').value;
@@ -590,7 +586,6 @@ async def superuser_dashboard():
         <pre class="code">${JSON.stringify(j, null, 2)}</pre>`;
     }
 
-    // -------- Bootstrap --------
     (function init(){ populateMonthSelects(); })();
   </script>
 </body>

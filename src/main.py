@@ -3,9 +3,11 @@
 from __future__ import annotations
 import importlib
 import importlib.util
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+
 
 def _find_router(spec_name: str, import_name: str):
     spec = importlib.util.find_spec(spec_name)
@@ -13,6 +15,7 @@ def _find_router(spec_name: str, import_name: str):
         return None
     mod = importlib.import_module(import_name)
     return getattr(mod, "router", None)
+
 
 # Core & uploads
 uploads_router = _find_router("src.api.uploads", "src.api.uploads")
@@ -38,26 +41,29 @@ agent_dashboard_router = _find_router("src.ui.agent_dashboard", "src.ui.agent_da
 admin_dashboard_router = _find_router("src.ui.admin_dashboard", "src.ui.admin_dashboard")
 superuser_dashboard_router = _find_router("src.ui.superuser_dashboard", "src.ui.superuser_dashboard")
 
+
 app = FastAPI(
-    title = "InsuranceLocal API",
-    description = "Open (cookie-auth) API for ingesting PDFs, computing expected commissions, and generating monthly reports.",
-    version = "1.0.0",
-    docs_url = "/docs",
-    redoc_url = "/redoc",
+    title="InsuranceLocal API",
+    description="Open (cookie-auth) API for ingesting PDFs, computing expected commissions, and generating monthly reports.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
-# Dev CORS (you’ll tighten before go-live)
+# Dev CORS (tighten for production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = ["*"],  # dev: permissive; production will be whitelisted
-    allow_credentials = True,
-    allow_methods = ["*"],
-    allow_headers = ["*"],
+    allow_origins=["*"],     # dev: permissive; production will be whitelisted
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
 
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok"}
+
 
 @app.get("/api/info", tags=["Health"])
 def api_info():
@@ -90,42 +96,71 @@ def api_info():
         },
     }
 
-# Include routers
+
+# --- Include routers WITHOUT extra prefixes (fixes accidental /api/api/...) ---
+
+# Already correct; these define their own '/api' prefixes internally
 if uploads_router:
-    app.include_router(uploads_router); print("✅ Uploads router registered")
+    app.include_router(uploads_router)
+    print("✅ Uploads router registered")
+
 if uploads_secure_router:
-    app.include_router(uploads_secure_router); print("✅ Uploads Secure router registered")
+    app.include_router(uploads_secure_router)
+    print("✅ Uploads Secure router registered")
 
+# Ingestion router already has prefix="/api/ingestion" – keep as-is
 if ingestion_router:
-    # IMPORTANT: no extra prefix here; router already has /api/ingestion
-    app.include_router(ingestion_router); print("✅ Ingestion router registered at /api/ingestion")
+    app.include_router(ingestion_router)  # DO NOT add another prefix
+    print("✅ Ingestion router registered at /api/ingestion")
 
+# REMOVE prefix="/api" for these (they already set /api/... inside the file)
 if agent_reports_router:
-    app.include_router(agent_reports_router, prefix="/api"); print("✅ Agent Reports router registered at /api")
+    app.include_router(agent_reports_router)
+    print("✅ Agent Reports router registered at /api")
+
 if admin_reports_router:
-    app.include_router(admin_reports_router, prefix="/api"); print("✅ Admin Reports router registered at /api")
+    app.include_router(admin_reports_router)
+    print("✅ Admin Reports router registered at /api")
+
 if disparities_router:
-    app.include_router(disparities_router, prefix="/api"); print("✅ Disparities router registered at /api")
+    app.include_router(disparities_router)
+    print("✅ Disparities router registered at /api")
+
+# Agent Missing is under /api/agent in the file; include as-is
 if agent_missing_router:
-    app.include_router(agent_missing_router, prefix=""); print("✅ Agent Missing router registered at /api/agent")
+    app.include_router(agent_missing_router)
+    print("✅ Agent Missing router registered at /api/agent")
+
 if agent_api_router:
-    app.include_router(agent_api_router, prefix="/api"); print("✅ Agent API router registered at /api")
+    app.include_router(agent_api_router)
+    print("✅ Agent API router registered at /api")
+
 if superuser_api_router:
-    app.include_router(superuser_api_router, prefix="/api"); print("✅ Superuser API router registered at /api")
+    app.include_router(superuser_api_router)
+    print("✅ Superuser API router registered at /api")
 
-# Auth
+# Auth router (has prefix="/api/auth" in file), so include without extra prefix
 if auth_router:
-    app.include_router(auth_router, prefix=""); print("✅ Auth router registered at /api/auth")
+    app.include_router(auth_router)
+    print("✅ Auth router registered at /api/auth")
 
-# UI
+# UI routers
 if ui_router:
-    app.include_router(ui_router); print("✅ Landing (UI) registered at /ui/")
+    app.include_router(ui_router)
+    print("✅ Landing (UI) registered at /ui/")
+
 if agent_dashboard_router:
-    app.include_router(agent_dashboard_router); print("✅ Agent Dashboard (UI) registered at /ui/agent")
+    app.include_router(agent_dashboard_router)
+    print("✅ Agent Dashboard (UI) registered at /ui/agent")
+
 if admin_dashboard_router:
-    app.include_router(admin_dashboard_router); print("✅ Admin Dashboard (UI) registered at /ui/admin")
+    app.include_router(admin_dashboard_router)
+    print("✅ Admin Dashboard (UI) registered at /ui/admin")
+
 if superuser_dashboard_router:
-    app.include_router(superuser_dashboard_router); print("✅ Superuser Dashboard (UI) registered at /ui/superuser")
+    app.include_router(superuser_dashboard_router)
+    print("✅ Superuser Dashboard (UI) registered at /ui/superuser")
+
 
 @app.get("/", include_in_schema=False)
 def root_redirect():

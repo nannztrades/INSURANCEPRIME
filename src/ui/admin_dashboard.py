@@ -1,13 +1,20 @@
 
-# src/ui/admin_dashboard.py
 from __future__ import annotations
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse, HTMLResponse
+from src.api.ui_pages import _get_current_user
 
 router = APIRouter(tags=["Admin Dashboard"])
 
 @router.get("/ui/admin", response_class=HTMLResponse)
-async def admin_dashboard():
+async def admin_dashboard(request: Request):
+    # ---- Cookie-based guard ----
+    u = _get_current_user(request) or {}
+    role = str(u.get("role") or "").lower()
+    if role not in ("admin", "superuser"):
+        return RedirectResponse(url="/ui/login?role=admin", status_code=302)
+
+    # ---- Full UI ----
     html = r"""
 <!doctype html>
 <html>
@@ -24,7 +31,7 @@ async def admin_dashboard():
     body { background:linear-gradient(135deg, #0f172a 0%, #0b1220 100%); color:var(--text); }
     a, a:hover { color: var(--accent); text-decoration: none; }
     .sidebar { width:300px; position:fixed; top:0; left:0; bottom:0; background:linear-gradient(180deg,#0b1220,#111827); color:#fff; padding:22px; overflow-y:auto; }
-    .nav-link { color:rgba(255,255,255,.92); cursor:pointer; padding:8px 12px; }
+    .nav-link { color:rgba(255,255,255,.92); cursor:pointer; padding:8px 12px; display:block; }
     .nav-link.active, .nav-link:hover { background:rgba(108,92,231,.18); border-left:3px solid var(--accent-2); border-radius:.35rem; }
     main { margin-left:300px; padding:28px; }
     .panel { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:18px; backdrop-filter: blur(3px); }
@@ -41,7 +48,6 @@ async def admin_dashboard():
     .section.active { display: block; }
     .edit-panel { background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); padding:12px; border-radius:10px; margin-top:12px; }
 
-    /* Small status chip */
     .status-chip {
       font-size:.75rem; color:#d1d5db; background:#0f1b33; border:1px solid #1f2937;
       padding:6px 10px; border-radius:999px; display:inline-flex; align-items:center; gap:6px;
@@ -56,7 +62,7 @@ async def admin_dashboard():
       <h5 class="mb-0">Admin Dashboard</h5>
     </div>
 
-    <!-- Identity status chip (email purely informational; ID preferred via x-user-id) -->
+    <!-- Identity status chip -->
     <div class="mb-3">
       <span class="status-chip" id="identity_chip">
         <i class="bi bi-person-badge"></i>
@@ -66,8 +72,8 @@ async def admin_dashboard():
     </div>
 
     <div class="mb-3">
-      <a href="/ui/agent" class="nav-link"><i class="bi bi-person-circle me-2"></i>Agent Dashboard</a>
-      <a href="/ui/superuser" class="nav-link"><i class="bi bi-shield-lock me-2"></i>Superuser Dashboard</a>
+      <a class="nav-link" href="/ui/agent"><i class="bi bi-person-circle me-2"></i>Agent Dashboard</a>
+      <a class="nav-link" href="/ui/superuser"><i class="bi bi-shield-lock me-2"></i>Superuser Dashboard</a>
       <a class="nav-link" onclick="logout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
     </div>
 
@@ -87,12 +93,12 @@ async def admin_dashboard():
     <a class="nav-link" onclick="showSection('activepol',event); loadActivePolicies();"><i class="bi bi-shield-shaded me-2"></i>Active Policies</a>
     <a class="nav-link" onclick="showSection('missingpol',event); loadMissing();"><i class="bi bi-search me-2"></i>Missing Policies</a>
 
-    <div class="text-kicker mt-3 mb-1">Audit & Reports</div>
+    <div class="text-kicker mt-3 mb-1">Audit &amp; Reports</div>
     <a class="nav-link" onclick="showSection('audit',event); loadAuditFlags && loadAuditFlags();"><i class="bi bi-flag me-2"></i>Audit Flags</a>
     <a class="nav-link" onclick="showSection('monthly',event);"><i class="bi bi-diagram-3 me-2"></i>Monthly Reports</a>
 
     <div class="mt-3">
-      <a href="/docs" target="_blank" class="nav-link"><i class="bi bi-journal-code me-2"></i>API Docs</a>
+      <a class="nav-link" href="/docs" target="_blank"><i class="bi bi-journal-code me-2"></i>API Docs</a>
     </div>
   </aside>
 
@@ -101,32 +107,17 @@ async def admin_dashboard():
     <section id="agents" class="panel section active">
       <div class="toolbar">
         <h4 class="mb-0">Agents</h4>
-        <button class="btn btn-outline-accent btn-sm" onclick="window.open('/api/admin/agents.csv','_blank')">
-          <i class="bi bi-filetype-csv"></i> CSV
-        </button>
+        <button class="btn btn-outline-accent btn-sm" onclick="window.open('/api/admin/agents.csv','_blank')"><i class="bi bi-filetype-csv"></i> CSV</button>
       </div>
 
-      <!-- Create/Upsert -->
       <form class="row g-3 mt-2" onsubmit="event.preventDefault(); upsertAgent();">
-        <div class="col-md-3">
-          <label class="form-label">Agent Code *</label>
-          <input id="agent_code" class="form-control" required>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label">Agent Name</label>
-          <input id="agent_name" class="form-control">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">License Number</label>
-          <input id="license_number" class="form-control">
-        </div>
-        <div class="col-md-2 d-flex align-items-end">
-          <button class="btn btn-accent w-100">Upsert Agent</button>
-        </div>
+        <div class="col-md-3"><label class="form-label">Agent Code *</label><input id="agent_code" class="form-control" required></div>
+        <div class="col-md-4"><label class="form-label">Agent Name</label><input id="agent_name" class="form-control"></div>
+        <div class="col-md-3"><label class="form-label">License Number</label><input id="license_number" class="form-control"></div>
+        <div class="col-md-2 d-flex align-items-end"><button class="btn btn-accent w-100">Upsert Agent</button></div>
       </form>
       <div id="agent_result" class="mt-2 small"></div>
 
-      <!-- Edit panel (hidden by default) -->
       <div id="agent_edit_panel" class="edit-panel" style="display:none;">
         <h6 class="mb-2">Edit Agent</h6>
         <form class="row g-2" onsubmit="event.preventDefault(); submitEditAgent();">
@@ -166,7 +157,6 @@ async def admin_dashboard():
       </form>
       <div id="user_result" class="mt-2 small"></div>
 
-      <!-- Edit panel (hidden by default) -->
       <div id="user_edit_panel" class="edit-panel" style="display:none;">
         <h6 class="mb-2">Edit User</h6>
         <form class="row g-2" onsubmit="event.preventDefault(); submitEditUser();">
@@ -347,7 +337,7 @@ async def admin_dashboard():
       <div class="table-responsive">
         <table class="table table-sm table-dark table-hover" id="missing_table">
           <thead><tr><th>Policy</th><th>Last Seen Month</th><th>Last Premium</th></tr></thead>
-          <tbody id="missing_tbody"><tr><td colspan="3" class="text-muted text-center">Select agent & month</td></tr></tbody>
+          <tbody id="missing_tbody"><tr><td colspan="3" class="text-muted text-center">Select agent &amp; month</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -374,7 +364,6 @@ async def admin_dashboard():
   <script>
     let AGENTS = [];
 
-    /* -------- Identity helpers: prefer numeric x-user-id; email is informational -------- */
     function getUserId(){
       try{
         const v = sessionStorage.getItem('user_id') || localStorage.getItem('user_id');
@@ -411,7 +400,6 @@ async def admin_dashboard():
       if(emEl) emEl.textContent = email || '—';
     }
 
-    /* Global fetch wrapper that injects x-user-id header when available */
     async function apiFetch(url, options={}){
       const opts = { ...options };
       if(!(opts.headers instanceof Headers)){
@@ -455,8 +443,8 @@ async def admin_dashboard():
     async function loadAgents(){
       const r=await apiFetch('/api/admin/agents?limit=1000'); const j=await r.json(); AGENTS=j.items||[];
       const ids=['user_agent','up_agent','dec_agent','stmt_agent','sch_agent','ter_agent','ap_agent','mp_agent','af_agent','mr_agent','trk_agent','edit_user_agent'];
-      ids.forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.innerHTML='<option value=\"\">- select -</option>'; AGENTS.forEach(a=>{ const opt=document.createElement('option'); opt.value=a.agent_code; opt.textContent=`${a.agent_code}${a.agent_name ? ' — '+a.agent_name : ''}`; el.appendChild(opt); }); });
-      const tb=document.getElementById('agents_tbody'); if(tb){ tb.innerHTML=''; if(!AGENTS.length) tb.innerHTML='<tr><td colspan=\"7\" class=\"text-muted text-center\">No agents</td></tr>'; AGENTS.forEach(a=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${a.agent_code||''}</td><td>${a.agent_name||''}</td><td>${a.license_number||''}</td><td>${a.is_active? '1':'0'}</td><td>${a.created_at||''}</td><td>${a.updated_at||''}</td><td><button class=\"btn btn-sm btn-outline-warning me-1\" onclick=\"editAgent('${a.agent_code}')\"><i class=\"bi bi-pencil\"></i></button><button class=\"btn btn-sm btn-outline-danger\" onclick=\"deactivateAgent('${a.agent_code}')\"><i class=\"bi bi-x-circle\"></i></button></td>`; tb.appendChild(tr); }); }
+      ids.forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.innerHTML='<option value="">- select -</option>'; AGENTS.forEach(a=>{ const opt=document.createElement('option'); opt.value=a.agent_code; opt.textContent=`${a.agent_code}${a.agent_name ? ' — '+a.agent_name : ''}`; el.appendChild(opt); }); });
+      const tb=document.getElementById('agents_tbody'); if(tb){ tb.innerHTML=''; if(!AGENTS.length) tb.innerHTML='<tr><td colspan="7" class="text-muted text-center">No agents</td></tr>'; AGENTS.forEach(a=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${a.agent_code||''}</td><td>${a.agent_name||''}</td><td>${a.license_number||''}</td><td>${a.is_active? '1':'0'}</td><td>${a.created_at||''}</td><td>${a.updated_at||''}</td><td><button class="btn btn-sm btn-outline-warning me-1" onclick="editAgent('${a.agent_code}')"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger" onclick="deactivateAgent('${a.agent_code}')"><i class="bi bi-x-circle"></i></button></td>`; tb.appendChild(tr); }); }
     }
 
     async function upsertAgent(){
@@ -499,7 +487,7 @@ async def admin_dashboard():
       const r=await apiFetch('/api/admin/users/upsert',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); const j=await r.json(); document.getElementById('user_result').innerText=JSON.stringify(j); await loadUsers(); refreshIdentityChip();
     }
     async function loadUsers(){
-      const r=await apiFetch('/api/admin/users?limit=1000'); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('users_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"8\" class=\"text-muted text-center\">No users</td></tr>'; rows.forEach(u=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${u.id||''}</td><td>${u.email||''}</td><td>${u.role||''}</td><td>${u.agent_code||''}</td><td>${u.is_active?'true':'false'}</td><td>${u.is_verified?'true':'false'}</td><td>${u.last_login||''}</td><td><button class=\"btn btn-sm btn-outline-warning me-1\" onclick=\"editUser(${u.id})\"><i class=\"bi bi-pencil\"></i></button><button class=\"btn btn-sm btn-outline-danger\" onclick=\"deleteUser(${u.id})\"><i class=\"bi bi-trash\"></i></button></td>`; tb.appendChild(tr); }); }
+      const r=await apiFetch('/api/admin/users?limit=1000'); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('users_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="8" class="text-muted text-center">No users</td></tr>'; rows.forEach(u=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${u.id||''}</td><td>${u.email||''}</td><td>${u.role||''}</td><td>${u.agent_code||''}</td><td>${u.is_active?'true':'false'}</td><td>${u.is_verified?'true':'false'}</td><td>${u.last_login||''}</td><td><button class="btn btn-sm btn-outline-warning me-1" onclick="editUser(${u.id})"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${u.id})"><i class="bi bi-trash"></i></button></td>`; tb.appendChild(tr); }); }
     async function editUser(id){
       const r=await apiFetch(`/api/admin/users/${id}`); const j=await r.json();
       if(j.status==='NOT_FOUND'){ alert('User not found'); return; }
@@ -539,28 +527,28 @@ async def admin_dashboard():
 
     async function loadUploads(){
       const params=new URLSearchParams(); const ac=document.getElementById('up_agent').value; const mm=document.getElementById('up_month').value; const dt=document.getElementById('up_doc').value; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(dt) params.append('doc_type',dt);
-      const r=await apiFetch(`/api/admin/uploads?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('up_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"8\" class=\"text-muted text-center\">No uploads</td></tr>'; rows.forEach(u=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${u.UploadID}</td><td>${u.agent_code||''}</td><td>${u.doc_type||''}</td><td>${u.FileName||''}</td><td>${u.month_year||''}</td><td>${u.UploadTimestamp||''}</td><td>${u.is_active?'1':'0'}</td><td>${u.is_active? `<button class=\"btn btn-sm btn-outline-danger\" onclick=\"deactivateUpload(${u.UploadID})\"><i class=\"bi bi-x-circle\"></i></button>` : `<button class=\"btn btn-sm btn-outline-success\" onclick=\"enableUpload(${u.UploadID})\"><i class=\"bi bi-check-circle\"></i></button>`}</td>`; tb.appendChild(tr); }); }
+      const r=await apiFetch(`/api/admin/uploads?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('up_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="8" class="text-muted text-center">No uploads</td></tr>'; rows.forEach(u=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${u.UploadID}</td><td>${u.agent_code||''}</td><td>${u.doc_type||''}</td><td>${u.FileName||''}</td><td>${u.month_year||''}</td><td>${u.UploadTimestamp||''}</td><td>${u.is_active?'1':'0'}</td><td>${u.is_active? `<button class="btn btn-sm btn-outline-danger" onclick="deactivateUpload(${u.UploadID})"><i class="bi bi-x-circle"></i></button>` : `<button class="btn btn-sm btn-outline-success" onclick="enableUpload(${u.UploadID})"><i class="bi bi-check-circle"></i></button>`}</td>`; tb.appendChild(tr); }); }
     function downloadUploadsCSV(){ const params=new URLSearchParams(); const ac=document.getElementById('up_agent').value; const mm=document.getElementById('up_month').value; const dt=document.getElementById('up_doc').value; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(dt) params.append('doc_type',dt); window.open(`/api/admin/uploads.csv?${params.toString()}`,'_blank'); }
     async function deactivateUpload(id){ const r=await apiFetch(`/api/admin/uploads/${id}`,{method:'DELETE'}); await r.json(); await loadUploads(); }
     async function enableUpload(id){ const r=await apiFetch(`/api/admin/uploads/enable/${id}`,{method:'POST'}); await r.json(); await loadUploads(); }
 
     async function deactivateOlder(){ const body={ agent_code: document.getElementById('dec_agent').value, month_year: document.getElementById('dec_month').value, doc_type: document.getElementById('dec_doc').value }; const r=await apiFetch('/api/admin/uploads/deactivate-older',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); const j=await r.json(); document.getElementById('dec_result').innerText=JSON.stringify(j); await loadUploads(); }
 
-    async function loadTracker(){ const ac=document.getElementById('trk_agent').value; if(!ac){ document.getElementById('trk_tbody').innerHTML='<tr><td colspan=\"3\" class=\"text-muted text-center\">Choose agent</td></tr>'; return; } const r=await apiFetch(`/api/admin/uploads/tracker?agent_code=${encodeURIComponent(ac)}&months_back=36`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('trk_tbody'); tb.innerHTML=''; if(!rows.length){ tb.innerHTML='<tr><td colspan=\"3\" class=\"text-muted text-center\">No data</td></tr>'; return; } rows.forEach(x=>{ const s=x.statement? `<span class=\"badge badge-ok\">✓</span>`:`<span class=\"badge badge-no\">✗</span>`; const sc=x.schedule? `<span class=\"badge badge-ok\">✓</span>`:`<span class=\"badge badge-no\">✗</span>`; const tr=document.createElement('tr'); tr.innerHTML=`<td>${x.month_year}</td><td>${s}</td><td>${sc}</td>`; tb.appendChild(tr); }); }
+    async function loadTracker(){ const ac=document.getElementById('trk_agent').value; if(!ac){ document.getElementById('trk_tbody').innerHTML='<tr><td colspan="3" class="text-muted text-center">Choose agent</td></tr>'; return; } const r=await apiFetch(`/api/admin/uploads/tracker?agent_code=${encodeURIComponent(ac)}&months_back=36`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('trk_tbody'); tb.innerHTML=''; if(!rows.length){ tb.innerHTML='<tr><td colspan="3" class="text-muted text-center">No data</td></tr>'; return; } rows.forEach(x=>{ const s=x.statement? `<span class="badge badge-ok">✓</span>`:`<span class="badge badge-no">✗</span>`; const sc=x.schedule? `<span class="badge badge-ok">✓</span>`:`<span class="badge badge-no">✗</span>`; const tr=document.createElement('tr'); tr.innerHTML=`<td>${x.month_year}</td><td>${s}</td><td>${sc}</td>`; tb.appendChild(tr); }); }
 
-    async function loadStatements(){ const params=new URLSearchParams(); const ac=document.getElementById('stmt_agent').value; const mm=document.getElementById('stmt_month').value; const po=document.getElementById('stmt_policy').value.trim(); if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po); const r=await apiFetch(`/api/admin/statements?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('stmt_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"9\" class=\"text-muted text-center\">No data</td></tr>'; rows.forEach(s=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${s.statement_id}</td><td>${s.agent_code||''}</td><td>${s.policy_no||''}</td><td>${s.holder||''}</td><td>${s.policy_type||''}</td><td>${s.pay_date||''}</td><td>${s.premium||''}</td><td>${s.com_amt||''}</td><td>${s.MONTH_YEAR||''}</td>`; tb.appendChild(tr); }); }
+    async function loadStatements(){ const params=new URLSearchParams(); const ac=document.getElementById('stmt_agent').value; const mm=document.getElementById('stmt_month').value; const po=document.getElementById('stmt_policy').value.trim(); if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po); const r=await apiFetch(`/api/admin/statements?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('stmt_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="9" class="text-muted text-center">No data</td></tr>'; rows.forEach(s=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${s.statement_id}</td><td>${s.agent_code||''}</td><td>${s.policy_no||''}</td><td>${s.holder||''}</td><td>${s.policy_type||''}</td><td>${s.pay_date||''}</td><td>${s.premium||''}</td><td>${s.com_amt||''}</td><td>${s.month_year || s.MONTH_YEAR || ''}</td>`; tb.appendChild(tr); }); }
     function downloadStatementsCSV(){ const params=new URLSearchParams(); const ac=document.getElementById('stmt_agent').value; const mm=document.getElementById('stmt_month').value; const po=document.getElementById('stmt_policy').value.trim(); if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po); window.open(`/api/admin/statements.csv?${params.toString()}`,'_blank'); }
 
-    async function loadSchedules(){ const params=new URLSearchParams(); const ac=document.getElementById('sch_agent').value; const mm=document.getElementById('sch_month').value; const lo=document.getElementById('sch_latest').value||'1'; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(ac) params.append('latest_only',lo); const r=await apiFetch(`/api/admin/schedule?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('sch_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"8\" class=\"text-muted text-center\">No data</td></tr>'; rows.forEach(sc=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${sc.schedule_id}</td><td>${sc.agent_code||''}</td><td>${sc.commission_batch_code||''}</td><td>${sc.total_premiums||''}</td><td>${sc.income||''}</td><td>${sc.total_deductions||''}</td><td>${sc.net_commission||''}</td><td>${sc.month_year||''}</td>`; tb.appendChild(tr); }); }
+    async function loadSchedules(){ const params=new URLSearchParams(); const ac=document.getElementById('sch_agent').value; const mm=document.getElementById('sch_month').value; const lo=document.getElementById('sch_latest').value||'1'; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(ac) params.append('latest_only',lo); const r=await apiFetch(`/api/admin/schedule?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('sch_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="8" class="text-muted text-center">No data</td></tr>'; rows.forEach(sc=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${sc.schedule_id}</td><td>${sc.agent_code||''}</td><td>${sc.commission_batch_code||''}</td><td>${sc.total_premiums||''}</td><td>${sc.income||''}</td><td>${sc.total_deductions||''}</td><td>${sc.net_commission||''}</td><td>${sc.month_year||''}</td>`; tb.appendChild(tr); }); }
     function downloadSchedulesCSV(){ const params=new URLSearchParams(); const ac=document.getElementById('sch_agent').value; const mm=document.getElementById('sch_month').value; const lo=document.getElementById('sch_latest').value||'1'; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(ac) params.append('latest_only',lo); window.open(`/api/admin/schedule.csv?${params.toString()}`,'_blank'); }
 
-    async function loadTerminated(){ const params=new URLSearchParams(); const ac=document.getElementById('ter_agent').value; const mm=document.getElementById('ter_month').value; const po=document.getElementById('ter_policy').value.trim(); if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po); const r=await apiFetch(`/api/admin/terminated?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('ter_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"8\" class=\"text-muted text-center\">No data</td></tr>'; rows.forEach(t=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${t.terminated_id}</td><td>${t.agent_code||''}</td><td>${t.policy_no||''}</td><td>${t.holder||''}</td><td>${t.status||''}</td><td>${t.reason||''}</td><td>${t.month_year||''}</td><td>${t.termination_date||''}</td>`; tb.appendChild(tr); }); }
+    async function loadTerminated(){ const params=new URLSearchParams(); const ac=document.getElementById('ter_agent').value; const mm=document.getElementById('ter_month').value; const po=document.getElementById('ter_policy').value.trim(); if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po); const r=await apiFetch(`/api/admin/terminated?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('ter_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="8" class="text-muted text-center">No data</td></tr>'; rows.forEach(t=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${t.terminated_id}</td><td>${t.agent_code||''}</td><td>${t.policy_no||''}</td><td>${t.holder||''}</td><td>${t.status||''}</td><td>${t.reason||''}</td><td>${t.month_year||''}</td><td>${t.termination_date||''}</td>`; tb.appendChild(tr); }); }
     function downloadTerminatedCSV(){ const params=new URLSearchParams(); const ac=document.getElementById('ter_agent').value; const mm=document.getElementById('ter_month').value; const po=document.getElementById('ter_policy').value.trim(); if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po); window.open(`/api/admin/terminated.csv?${params.toString()}`,'_blank'); }
 
-    async function loadActivePolicies(){ const params=new URLSearchParams(); const ac=document.getElementById('ap_agent').value; const mm=document.getElementById('ap_month').value; const st=document.getElementById('ap_status').value; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(st) params.append('status',st); const r=await apiFetch(`/api/admin/active-policies?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('active_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"8\" class=\"text-muted text-center\">No data</td></tr>'; rows.forEach(a=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${a.id}</td><td>${a.agent_code||''}</td><td>${a.policy_no||''}</td><td>${a.policy_type||''}</td><td>${a.holder_name||''}</td><td>${a.last_seen_month_year||''}</td><td>${a.last_premium||''}</td><td>${a.status||''}</td>`; tb.appendChild(tr); }); }
+    async function loadActivePolicies(){ const params=new URLSearchParams(); const ac=document.getElementById('ap_agent').value; const mm=document.getElementById('ap_month').value; const st=document.getElementById('ap_status').value; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(st) params.append('status',st); const r=await apiFetch(`/api/admin/active-policies?${params.toString()}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('active_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="8" class="text-muted text-center">No data</td></tr>'; rows.forEach(a=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${a.id}</td><td>${a.agent_code||''}</td><td>${a.policy_no||''}</td><td>${a.policy_type||''}</td><td>${a.holder_name||''}</td><td>${a.last_seen_month_year||''}</td><td>${a.last_premium||''}</td><td>${a.status||''}</td>`; tb.appendChild(tr); }); }
     function downloadActivePoliciesCSV(){ const params=new URLSearchParams(); const ac=document.getElementById('ap_agent').value; const mm=document.getElementById('ap_month').value; const st=document.getElementById('ap_status').value; if(ac) params.append('agent_code',ac); if(mm) params.append('month_year',mm); if(st) params.append('status',st); window.open(`/api/admin/active-policies.csv?${params.toString()}`,'_blank'); }
 
-    async function loadMissing(){ const ac=document.getElementById('mp_agent').value; const mm=document.getElementById('mp_month').value; if(!ac||!mm) return; const r=await apiFetch(`/api/admin/missing?agent_code=${encodeURIComponent(ac)}&month_year=${encodeURIComponent(mm)}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('missing_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan=\"3\" class=\"text-muted text-center\">No missing policies</td></tr>'; rows.forEach(m=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${m.policy_no||''}</td><td>${m.last_seen_month||''}</td><td>${m.last_premium||''}</td>`; tb.appendChild(tr); }); }
+    async function loadMissing(){ const ac=document.getElementById('mp_agent').value; const mm=document.getElementById('mp_month').value; if(!ac||!mm) return; const r=await apiFetch(`/api/admin/missing?agent_code=${encodeURIComponent(ac)}&month_year=${encodeURIComponent(mm)}`); const j=await r.json(); const rows=j.items||[]; const tb=document.getElementById('missing_tbody'); tb.innerHTML=''; if(!rows.length) tb.innerHTML='<tr><td colspan="3" class="text-muted text-center">No missing policies</td></tr>'; rows.forEach(m=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${m.policy_no||''}</td><td>${m.last_seen_month||''}</td><td>${m.last_premium||''}</td>`; tb.appendChild(tr); }); }
     function downloadMissingCSV(){ const ac=document.getElementById('mp_agent').value; const mm=document.getElementById('mp_month').value; if(!ac||!mm) return; window.open(`/api/admin/missing.csv?agent_code=${encodeURIComponent(ac)}&month_year=${encodeURIComponent(mm)}`,'_blank'); }
 
     async function generateMonthlyAgentMonth(){
@@ -574,18 +562,17 @@ async def admin_dashboard():
       fd.append('agent_code',ac);
       fd.append('month_year',mm);
       if(an) fd.append('agent_name',an);
-      if(uid) fd.append('user_id',uid); // still send form field for backwards compatibility
+      if(uid) fd.append('user_id',uid);
       if(upid) fd.append('upload_id',upid);
       fd.append('out',out);
 
-      // Persist User ID and update chip; apiFetch() injects 'x-user-id' automatically
       if(uid) setUserId(uid);
       refreshIdentityChip();
 
       const r=await apiFetch('/api/admin/reports/generate-agent-month',{method:'POST', body:fd});
       const j=await r.json();
       const el=document.getElementById('mr_result');
-      el.innerHTML=`<div class=\"alert alert-success\"><div><strong>Status:</strong> ${j.status||'UNKNOWN'}</div><div><strong>Agent:</strong> ${j.agent_code||ac} &nbsp; (${j.agent_name||an||ac})</div><div><strong>Month:</strong> ${j.month_year||mm}</div><div><strong>Report period:</strong> ${j.report_period||''}</div><div><strong>Upload used:</strong> ${j.upload_id_used ?? j.upload_id ?? ''}</div><div><strong>Expected rows inserted:</strong> ${j.expected_rows_inserted ?? 0}</div><div><strong>PDF:</strong> ${(j.pdf && j.pdf.pdf_path) ? j.pdf.pdf_path : 'generated'}</div></div><pre class=\"code\">${JSON.stringify(j,null,2)}</pre>`;
+      el.innerHTML=`<div class="alert alert-success"><div><strong>Status:</strong> ${j.status||'UNKNOWN'}</div><div><strong>Agent:</strong> ${j.agent_code||ac} &nbsp; (${j.agent_name||an||ac})</div><div><strong>Month:</strong> ${j.month_year||mm}</div><div><strong>Report period:</strong> ${j.report_period||''}</div><div><strong>Upload used:</strong> ${j.upload_id_used ?? j.upload_id ?? ''}</div><div><strong>Expected rows inserted:</strong> ${j.expected_rows_inserted ?? 0}</div><div><strong>PDF:</strong> ${(j.pdf && j.pdf.pdf_path) ? j.pdf.pdf_path : 'generated'}</div></div><pre class="code">${JSON.stringify(j,null,2)}</pre>`;
     }
 
     (async function init(){

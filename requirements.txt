@@ -13,5 +13,5 @@ httpx==0.28.1
 alembic==1.14.0
 sqlalchemy==2.0.36
 cryptography==44.0.0
-PyJWT==2.10.1
+PyJWT==2.9.0
 pypdf==5.1.0

@@ -1,13 +1,21 @@
 
-# src/ui/agent_dashboard.py
 from __future__ import annotations
-from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse, HTMLResponse
+from src.api.ui_pages import _get_current_user
 
 router = APIRouter(tags=["Agent Dashboard"])
 
 @router.get("/ui/agent", response_class=HTMLResponse)
-async def agent_dashboard():
+async def agent_dashboard(request: Request):
+    # ---- Cookie-based guard ----
+    u = _get_current_user(request) or {}
+    role = str(u.get("role") or "").lower()
+    agent_code = (u.get("agent_code") or "").strip()
+    if role != "agent" or not agent_code:
+        return RedirectResponse(url="/ui/login?role=agent", status_code=302)
+
+    # ---- Full UI ----
     html = r"""
 <!doctype html>
 <html>
@@ -47,6 +55,7 @@ async def agent_dashboard():
     .cardx .label { font-size:.8rem; opacity:.9; }
     .cardx .value { font-size:1.6rem; font-weight:700; }
     .id-box { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); padding:10px; border-radius:10px; margin-bottom:10px; }
+    .code { font-family: ui-monospace, Menlo, Consolas, "Courier New", monospace; }
   </style>
 </head>
 <body>
@@ -57,9 +66,9 @@ async def agent_dashboard():
     </div>
 
     <div class="mb-3">
-      <a href="/ui/" class="nav-link"><i class="bi bi-house me-2"></i>Landing</a>
-      <a href="/ui/admin" class="nav-link"><i class="bi bi-gear me-2"></i>Admin Dashboard</a>
-      <a href="/ui/superuser" class="nav-link"><i class="bi bi-shield-lock me-2"></i>Superuser Dashboard</a>
+      <a class="nav-link" href="/ui/"><i class="bi bi-house me-2"></i>Landing</a>
+      <a class="nav-link" href="/ui/admin"><i class="bi bi-gear me-2"></i>Admin Dashboard</a>
+      <a class="nav-link" href="/ui/superuser"><i class="bi bi-shield-lock me-2"></i>Superuser Dashboard</a>
       <a class="nav-link" onclick="logout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</a>
     </div>
 
@@ -86,7 +95,7 @@ async def agent_dashboard():
       <div class="small text-muted">Identity headers for Agent wrapper APIs (stored in localStorage).</div>
       <div class="row g-2">
         <div class="col-md-4"><input id="id_email" class="form-control" placeholder="x-user-email"></div>
-        <div class="col-md-4"><input id="id_role" class="form-control" placeholder="x-user-role (agent)" value="agent"></div>
+        <div class="col-md-4"><input id="id_role"  class="form-control" placeholder="x-user-role (agent)" value="agent"></div>
         <div class="col-md-4"><input id="id_agent" class="form-control" placeholder="x-user-agent (your agent_code)"></div>
         <div class="col-md-12 d-flex justify-content-end"><button class="btn btn-outline-accent btn-sm" onclick="saveIdentity()">Save identity</button></div>
       </div>
@@ -100,26 +109,12 @@ async def agent_dashboard():
       </div>
       <div id="agent_identity" class="mt-2 small"></div>
       <div class="cards mt-3">
-        <div class="cardx c1">
-          <div class="label">Active Policies</div>
-          <div class="value" id="sum_active_policies">0</div>
-        </div>
-        <div class="cardx c2">
-          <div class="label">Active Statements</div>
-          <div class="value" id="sum_active_statements">0</div>
-        </div>
-        <div class="cardx c3">
-          <div class="label">Active Schedules</div>
-          <div class="value" id="sum_active_schedules">0</div>
-        </div>
-        <div class="cardx c4">
-          <div class="label">Active Terminated</div>
-          <div class="value" id="sum_active_terminated">0</div>
-        </div>
+        <div class="cardx c1"><div class="label">Active Policies</div><div class="value" id="sum_active_policies">0</div></div>
+        <div class="cardx c2"><div class="label">Active Statements</div><div class="value" id="sum_active_statements">0</div></div>
+        <div class="cardx c3"><div class="label">Active Schedules</div><div class="value" id="sum_active_schedules">0</div></div>
+        <div class="cardx c4"><div class="label">Active Terminated</div><div class="value" id="sum_active_terminated">0</div></div>
       </div>
-      <div class="mt-3">
-        <div id="sum_note" class="small text-muted">Counts use active uploads and policy status via wrapper APIs.</div>
-      </div>
+      <div class="mt-3"><div id="sum_note" class="small text-muted">Counts use active uploads and policy status via wrapper APIs.</div></div>
     </section>
 
     <!-- Uploads -->
@@ -176,7 +171,7 @@ async def agent_dashboard():
             <th>ID</th><th>Policy</th><th>Holder</th><th>Type</th><th>Pay Date</th>
             <th>Premium</th><th>Commission</th><th>Month</th>
           </tr></thead>
-          <tbody id="stmt_tbody"><tr><td colspan="8" class="text-muted text-center">Click Load</td></tr></tbody>
+          <tbody id="stmt_tbody"><tr><td colspan="8" class="text-muted text-center">No data</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -197,7 +192,7 @@ async def agent_dashboard():
           <thead><tr>
             <th>ID</th><th>Batch</th><th>Total Premium</th><th>Income</th><th>Deductions</th><th>Net Commission</th><th>Month</th>
           </tr></thead>
-          <tbody id="sch_tbody"><tr><td colspan="7" class="text-muted text-center">Click Load</td></tr></tbody>
+          <tbody id="sch_tbody"><tr><td colspan="7" class="text-muted text-center">No data</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -216,7 +211,7 @@ async def agent_dashboard():
       <div class="table-responsive">
         <table class="table table-sm table-dark table-hover" id="terminated_table">
           <thead><tr><th>ID</th><th>Policy</th><th>Holder</th><th>Status</th><th>Reason</th><th>Month</th><th>Termination Date</th></tr></thead>
-          <tbody id="ter_tbody"><tr><td colspan="7" class="text-muted text-center">Click Load</td></tr></tbody>
+          <tbody id="ter_tbody"><tr><td colspan="7" class="text-muted text-center">No data</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -237,7 +232,7 @@ async def agent_dashboard():
       <div class="table-responsive">
         <table class="table table-sm table-dark table-hover" id="active_table">
           <thead><tr><th>ID</th><th>Policy</th><th>Type</th><th>Holder</th><th>Last Seen</th><th>Premium</th><th>Status</th></tr></thead>
-          <tbody id="active_tbody"><tr><td colspan="7" class="text-muted text-center">Click Load</td></tr></tbody>
+          <tbody id="active_tbody"><tr><td colspan="7" class="text-muted text-center">No data</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -301,7 +296,12 @@ async def agent_dashboard():
     function showSection(id, ev){
       document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
       let target = null;
-      if (ev) { try { if (ev.target) target = ev.target.closest ? ev.target.closest('.nav-link') : null; else if (ev.classList && ev.classList.contains && ev.classList.contains('nav-link')) target = ev; } catch (e) { target = null; } }
+      if (ev) {
+        try {
+          if (ev.target) target = ev.target.closest ? ev.target.closest('.nav-link') : null;
+          else if (ev.classList && ev.classList.contains && ev.classList.contains('nav-link')) target = ev;
+        } catch (e) { target = null; }
+      }
       if (target && target.classList) target.classList.add('active');
       document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
       const sec = document.getElementById(id); if (sec) sec.classList.add('active');
@@ -328,19 +328,16 @@ async def agent_dashboard():
         document.getElementById('agent_identity').innerHTML = '<div class="text-danger">Set identity — agent_code required.</div>';
         return;
       }
-      // Show identity
       document.getElementById('agent_identity').innerHTML =
         `<div class="alert alert-secondary" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)">
           <div><strong>Email:</strong> ${idEmail}</div>
           <div><strong>Agent:</strong> ${idAgent}</div>
         </div>`;
 
-      // Active policies count
       const rAP=await fetch(`/api/agent/active-policies?status=ACTIVE&limit=100000`,{headers:headers()});
       const jAP=await rAP.json(); const itemsAP=jAP.items || [];
       document.getElementById('sum_active_policies').textContent = itemsAP.length;
 
-      // Active uploads by doc_type
       const rUP=await fetch(`/api/agent/uploads?limit=100000`,{headers:headers()});
       const jUP=await rUP.json(); const itemsUP=jUP.items || [];
       const activeUP = itemsUP.filter(u=>u.is_active);
@@ -375,7 +372,7 @@ async def agent_dashboard():
       const mm=document.getElementById('up_month').value;
       const dt=document.getElementById('up_doc').value;
       if(mm) params.append('month_year',mm); if(dt) params.append('doc_type',dt);
-      window.open(`/api/admin/uploads.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/uploads.csv?${params.toString()}`,'_blank');
     }
 
     // -------- Tracker --------
@@ -407,7 +404,7 @@ async def agent_dashboard():
         tr.innerHTML = `
           <td>${s.statement_id}</td><td>${s.policy_no||''}</td>
           <td>${s.holder||''}</td><td>${s.policy_type||''}</td><td>${s.pay_date||''}</td>
-          <td>${s.premium||''}</td><td>${s.com_amt||''}</td><td>${s.MONTH_YEAR||''}</td>`;
+          <td>${s.premium||''}</td><td>${s.com_amt||''}</td><td>${s.month_year || s.MONTH_YEAR || ''}</td>`;
         tb.appendChild(tr);
       });
     }
@@ -416,7 +413,7 @@ async def agent_dashboard():
       const mm=document.getElementById('stmt_month').value;
       const po=document.getElementById('stmt_policy').value.trim();
       if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po);
-      window.open(`/api/admin/statements.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/statements.csv?${params.toString()}`,'_blank');
     }
 
     // -------- Schedules --------
@@ -425,7 +422,7 @@ async def agent_dashboard():
       const mm=document.getElementById('sch_month').value;
       const lo=document.getElementById('sch_latest').value || '1';
       if(mm) params.append('month_year',mm);
-      params.append('latest_only', lo);  // agent wrapper dedup by month when latest_only=1
+      params.append('latest_only', lo);  // de-dup when latest_only=1
       const r=await fetch(`/api/agent/schedule?${params.toString()}`,{headers:headers()});
       const j=await r.json(); const rows=j.items||[];
       const tb=document.getElementById('sch_tbody'); tb.innerHTML='';
@@ -444,7 +441,7 @@ async def agent_dashboard():
       const mm=document.getElementById('sch_month').value;
       const lo=document.getElementById('sch_latest').value || '1';
       if(mm) params.append('month_year',mm); params.append('latest_only', lo);
-      window.open(`/api/admin/schedule.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/schedule.csv?${params.toString()}`,'_blank');
     }
 
     // -------- Terminated --------
@@ -471,7 +468,7 @@ async def agent_dashboard():
       const mm=document.getElementById('ter_month').value;
       const po=document.getElementById('ter_policy').value.trim();
       if(mm) params.append('month_year',mm); if(po) params.append('policy_no',po);
-      window.open(`/api/admin/terminated.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/terminated.csv?${params.toString()}`,'_blank');
     }
 
     // -------- Active Policies --------
@@ -487,7 +484,7 @@ async def agent_dashboard():
       rows.forEach(a=>{
         const tr=document.createElement('tr');
         tr.innerHTML = `
-          <td>${a.id}</td><td>${a.policy_type||''}</td>
+          <td>${a.id}</td><td>${a.policy_no||''}</td><td>${a.policy_type||''}</td>
           <td>${a.holder_name||''}</td><td>${a.last_seen_month_year||''}</td><td>${a.last_premium||''}</td><td>${a.status||''}</td>`;
         tb.appendChild(tr);
       });
@@ -497,7 +494,7 @@ async def agent_dashboard():
       const mm=document.getElementById('ap_month').value;
       const st=document.getElementById('ap_status').value;
       if(mm) params.append('month_year',mm); if(st) params.append('status',st);
-      window.open(`/api/admin/active-policies.csv?${params.toString()}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/active-policies.csv?${params.toString()}`,'_blank');
     }
 
     // -------- Missing --------
@@ -517,7 +514,7 @@ async def agent_dashboard():
     function downloadMissingCSV(){
       const mm=document.getElementById('mp_month').value;
       if(!mm) return;
-      window.open(`/api/admin/missing.csv?month_year=${encodeURIComponent(mm)}`,'_blank'); // CSV via admin export
+      window.open(`/api/admin/missing.csv?month_year=${encodeURIComponent(mm)}`,'_blank');
     }
 
     // -------- Monthly report --------
@@ -553,7 +550,6 @@ async def agent_dashboard():
         <pre class="code">${JSON.stringify(j, null, 2)}</pre>`;
     }
 
-    // -------- Bootstrap --------
     (function init(){ populateMonthSelects(); loadSummary(); loadTracker(); })();
   </script>
 </body>
