@@ -1,7 +1,9 @@
+
 # migrations/env.py
 from logging.config import fileConfig
 import os
 from sqlalchemy import engine_from_config, pool
+import sqlalchemy as sa
 from alembic import context
 
 config = context.config
@@ -27,18 +29,18 @@ def get_url() -> str:
         if url.startswith("mysql://"):
             url = url.replace("mysql://", "mysql+pymysql://", 1)
         return url
-    
-    # Fallback:  construct from individual vars
+
+    # Fallback: construct from individual vars
     user = os.getenv("MYSQLUSER") or os.getenv("DB_USER")
     password = os.getenv("MYSQLPASSWORD") or os.getenv("DB_PASSWORD")
     host = os.getenv("MYSQLHOST") or os.getenv("DB_HOST", "localhost")
     port = os.getenv("MYSQLPORT") or os.getenv("DB_PORT", "3306")
     database = os.getenv("MYSQLDATABASE") or os.getenv("DB_NAME", "railway")
-    
+
     if user and password and host and database:
         return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
-    
-    # Final fallback:  alembic. ini (local dev only)
+
+    # Final fallback: alembic.ini (local dev only)
     return config.get_main_option("sqlalchemy.url") or ""
 
 
@@ -49,6 +51,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        # ensure alembic_version.version_num is wide enough on *new* DBs
+        version_table_column_type=sa.String(64),
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -57,13 +61,13 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
     url = get_url()
-    
-    # ✅ Type-safe:  Ensure url is not None
+
+    # ✅ Type-safe: Ensure url is not None
     if not url:
-        raise ValueError("Database URL not configured.  Set MYSQL_URL or DB_* environment variables.")
-    
+        raise ValueError("Database URL not configured. Set MYSQL_URL or DB_* environment variables.")
+
     configuration["sqlalchemy.url"] = url
-    
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -71,9 +75,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context. configure(
+        context.configure(
             connection=connection,
-            target_metadata=target_metadata
+            target_metadata=target_metadata,
+            # ensure alembic_version.version_num is wide enough on *new* DBs
+            version_table_column_type=sa.String(64),
         )
         with context.begin_transaction():
             context.run_migrations()
@@ -81,5 +87,5 @@ def run_migrations_online() -> None:
 
 if context.is_offline_mode():
     run_migrations_offline()
-else:
+else:    
     run_migrations_online()

@@ -1,23 +1,48 @@
 
 # src/api/disparities.py
 from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List
 from datetime import datetime, date
 from calendar import monthrange
 import csv, io
+
 from src.ingestion.db import get_conn
 
 router = APIRouter(prefix="/api/disparities", tags=["Disparities"])
 
 def _parse_month_year(label: str) -> date:
-    parts = (label or "").split()
-    months = {"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,"Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12}
-    if len(parts) != 2 or parts[0] not in months:
-        raise ValueError("Month label not recognized. Use 'Mon YYYY', e.g. 'Jun 2025'.")
-    y = int(parts[1]); m = months[parts[0]]
-    return date(y, m, 1)
+    """
+    Accept both 'YYYY-MM' (canonical) and 'Mon YYYY' (legacy) and return the first day.
+    """
+    s = (label or "").strip()
+    if not s:
+        raise ValueError("month_year is required")
+
+    # Canonical 'YYYY-MM'
+    try:
+        if len(s) == 7 and s[4] == "-":
+            return datetime.strptime(s + "-01", "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+    # Legacy 'Mon YYYY' or 'Month YYYY'
+    for fmt in ("%b %Y", "%B %Y"):
+        try:
+            return datetime.strptime("01 " + s, "%d " + fmt).date()
+        except Exception:
+            continue
+
+    # Tolerate 'YYYY/MM'
+    try:
+        if len(s) == 7 and s[4] == "/":
+            return datetime.strptime(s.replace("/", "-") + "-01", "%Y-%m-%d").date()
+    except Exception:
+        pass
+
+    raise ValueError("Month label not recognized. Use 'YYYY-MM' or 'Mon YYYY' (e.g., '2025-06' or 'Jun 2025').")
 
 @router.get("/pay-date")
 def pay_date_disparities(agent_code: str, month_year: str) -> Dict[str, Any]:
@@ -30,12 +55,15 @@ def pay_date_disparities(agent_code: str, month_year: str) -> Dict[str, Any]:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT `policy_no`,`holder`,`pay_date`,`premium`,`MONTH_YEAR`
                 FROM `statement`
                 WHERE `agent_code`=%s AND `MONTH_YEAR`=%s
                 ORDER BY `pay_date` DESC
-            """, (agent_code, month_year))
+                """,
+                (agent_code, month_year),
+            )
             rows = cur.fetchall() or []
 
         disparities: List[Dict[str, Any]] = []
@@ -44,7 +72,8 @@ def pay_date_disparities(agent_code: str, month_year: str) -> Dict[str, Any]:
         past_dated_count = 0
 
         for r in rows:
-            pay_val = r.get('pay_date')
+            pay_val = r.get("pay_date")
+            # Normalize to date
             pd: date
             try:
                 if isinstance(pay_val, date):
@@ -62,33 +91,38 @@ def pay_date_disparities(agent_code: str, month_year: str) -> Dict[str, Any]:
 
             if not (start <= pd <= end):
                 days_diff = (pd - end).days
-                prem = float(r.get('premium') or 0.0)
+                prem = float(r.get("premium") or 0.0)
                 total_premium_affected += prem
-                if days_diff > 0: future_dated_count += 1
-                else: past_dated_count += 1
-                disparities.append({
-                    "policy_no": r.get('policy_no'),
-                    "holder_name": r.get('holder'),
-                    "premium": prem,
-                    "expected_month": month_year,
-                    "pay_date": pd.isoformat(),
-                    "days_difference": days_diff
-                })
+                if days_diff > 0:
+                    future_dated_count += 1
+                else:
+                    past_dated_count += 1
+                disparities.append(
+                    {
+                        "policy_no": r.get("policy_no"),
+                        "holder_name": r.get("holder"),
+                        "premium": prem,
+                        "expected_month": month_year,
+                        "pay_date": pd.isoformat(),
+                        "days_difference": days_diff,
+                    }
+                )
 
         return {
             "summary": {
                 "total_disparities": len(disparities),
                 "future_dated_count": future_dated_count,
                 "past_dated_count": past_dated_count,
-                "total_premium_affected": round(total_premium_affected, 2)
+                "total_premium_affected": round(total_premium_affected, 2),
             },
-            "disparities": disparities
+            "disparities": disparities,
         }
     finally:
         conn.close()
 
 @router.get("/pay-date.csv")
 def pay_date_disparities_csv(agent_code: str, month_year: str):
+    # Same logic, CSV output
     try:
         start = _parse_month_year(month_year)
         end = date(start.year, start.month, monthrange(start.year, start.month)[1])
@@ -98,18 +132,20 @@ def pay_date_disparities_csv(agent_code: str, month_year: str):
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT `policy_no`,`holder`,`pay_date`,`premium`,`MONTH_YEAR`
                 FROM `statement`
                 WHERE `agent_code`=%s AND `MONTH_YEAR`=%s
                 ORDER BY `pay_date` DESC
-            """, (agent_code, month_year))
+                """,
+                (agent_code, month_year),
+            )
             rows = cur.fetchall() or []
 
         disparities: List[Dict[str, Any]] = []
         for r in rows:
-            pay_val = r.get('pay_date')
-            pd: date
+            pay_val = r.get("pay_date")
             try:
                 if isinstance(pay_val, date):
                     pd = pay_val
@@ -124,20 +160,21 @@ def pay_date_disparities_csv(agent_code: str, month_year: str):
             except Exception:
                 continue
 
+            # Only emit rows out of the month bounds
             if not (start <= pd <= end):
-                days_diff = (pd - end).days
-                prem = float(r.get('premium') or 0.0)
-                disparities.append({
-                    "policy_no": r.get('policy_no'),
-                    "holder_name": r.get('holder'),
-                    "premium": prem,
-                    "expected_month": month_year,
-                    "pay_date": pd.isoformat(),
-                    "days_difference": days_diff
-                })
+                disparities.append(
+                    {
+                        "policy_no": r.get("policy_no"),
+                        "holder_name": r.get("holder"),
+                        "premium": float(r.get("premium") or 0.0),
+                        "expected_month": month_year,
+                        "pay_date": pd.isoformat(),
+                        "days_difference": (pd - end).days,
+                    }
+                )
 
         buf = io.StringIO()
-        headers = ["policy_no","holder_name","premium","expected_month","pay_date","days_difference"]
+        headers = ["policy_no", "holder_name", "premium", "expected_month", "pay_date", "days_difference"]
         writer = csv.DictWriter(buf, fieldnames=headers)
         writer.writeheader()
         for d in disparities:

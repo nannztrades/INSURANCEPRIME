@@ -1,0 +1,1189 @@
+from __future__ import annotations
+﻿from src.services.periods import to_period_key
+# -*- coding: utf-8 -*-
+
+from typing import Dict, Any, List, Optional, Tuple, cast
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime
+from pathlib import Path
+
+from src.ingestion.db import get_conn
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Global money settings
+# ────────────────────────────────────────────────────────────────────────────────
+
+_TWO_DP = Decimal("0.01")
+
+# Toggle: include welfareko in total deductions & net?
+# Set to True if business rules say it should reduce net commission.
+INCLUDE_WELFARE_IN_DEDUCTIONS = False
+
+def _to_dec(x: Any) -> Decimal:
+    """Convert value to Decimal reliably (avoids float binary artifacts)."""
+    try:
+        return Decimal(str(x if x is not None else 0))
+    except Exception:
+        return Decimal("0")
+
+def _money(x: Any) -> float:
+    """Return a float rounded to 2dp using half-up (money style)."""
+    return float(_to_dec(x).quantize(_TWO_DP, rounding=ROUND_HALF_UP))
+
+def _ten_percent(v: Any) -> float:
+    """Compute 10% of a value with Decimal precision then round to 2dp."""
+    return _money(_to_dec(v) * Decimal("0.10"))
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Month & DB helpers
+# ────────────────────────────────────────────────────────────────────────────────
+
+def _period_key_from_month_year(label: Optional[str]) -> Optional[str]:
+    """Mon YYYY -> YYYY-MM (e.g., 'Jun 2025' -> '2025-06')."""
+    try:
+        month_map = {
+            "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+            "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+        }
+        if not label:
+            return None
+        parts = str(label).split()
+        if len(parts) != 2 or parts[0] not in month_map:
+            return None
+        y = int(parts[1])
+        m = month_map[parts[0]]
+        return f"{y:04d}-{m:02d}"
+    except Exception:
+        return None
+
+def _safe_period_key(month_year: Optional[str]) -> str:
+    """
+    Return a guaranteed period key string for queries:
+    - Prefer 'YYYY-MM' derived from 'Mon YYYY'
+    - Fallback: replace space with hyphen in the given label (e.g., 'Jun 2025' -> 'Jun-2025')
+    - If month_year is None or empty, return 'UNKNOWN'
+    """
+    if not month_year:
+        return "UNKNOWN"
+    pk = _period_key_from_month_year(month_year)
+    return pk if pk is not None else month_year.replace(" ", "-")
+
+def _sum_statement_commission(agent_code: str, month_year: str) -> float:
+    """Gross commission (reported) from statement.com_amt."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(`com_amt`), 0.0) AS total_com "
+                "FROM `statement` WHERE `agent_code`=%s AND `MONTH_YEAR`=%s",
+                (agent_code, month_year),
+            )
+            r = cur.fetchone() or {}
+            return float(r.get("total_com") or 0.0)
+    finally:
+        conn.close()
+
+def _sum_statement_premium(agent_code: str, month_year: str) -> Tuple[int, float]:
+    """Policies reported & total premium (reported)."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS cnt, COALESCE(SUM(`premium`), 0.0) AS total_prem "
+                "FROM `statement` WHERE `agent_code`=%s AND `MONTH_YEAR`=%s",
+                (agent_code, month_year),
+            )
+            r = cur.fetchone() or {}
+            return int(r.get("cnt") or 0), float(r.get("total_prem") or 0.0)
+    finally:
+        conn.close()
+
+def _fetch_schedule_latest(agent_code: str, month_year: str) -> Dict[str, Any]:
+    """
+    Latest schedule row: income (gross), total_deductions, net_commission,
+    plus optional components: siclase, premium_deduction, pensions, welfareko.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT `income`,`total_deductions`,`net_commission`,
+                       COALESCE(`siclase`,0.0)            AS siclase,
+                       COALESCE(`premium_deduction`,0.0)  AS premium_deduction,
+                       COALESCE(`pensions`,0.0)           AS pensions,
+                       COALESCE(`welfareko`,0.0)          AS welfareko
+                FROM `schedule`
+                WHERE `agent_code`=%s AND `month_year`=%s
+                ORDER BY `upload_id` DESC
+                LIMIT 1
+                """,
+                (agent_code, month_year),
+            )
+            r = cur.fetchone() or {}
+            return {
+                "income": float(r.get("income") or 0.0),
+                "total_deductions": float(r.get("total_deductions") or 0.0),
+                "net_commission": float(r.get("net_commission") or 0.0),
+                "siclase": float(r.get("siclase") or 0.0),
+                "premium_deduction": float(r.get("premium_deduction") or 0.0),
+                "pensions": float(r.get("pensions") or 0.0),
+                "welfareko": float(r.get("welfareko") or 0.0),
+            }
+    finally:
+        conn.close()
+
+def _sum_expected_commission(agent_code: str, period_key: str) -> float:
+    """Gross commission (expected) from expected_commissions.expected_amount (YYYY-MM)."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(`expected_amount`),0.0) AS total_expected
+                FROM `expected_commissions`
+                WHERE `agent_code`=%s AND `period`=%s
+                """,
+                (agent_code, period_key),
+            )
+            r = cur.fetchone() or {}
+            return float(r.get("total_expected") or 0.0)
+    finally:
+        conn.close()
+
+def _fetch_missing_policies(agent_code: str, month_year: str) -> List[Dict[str, Any]]:
+    """
+    ALL policies that were seen before but NOT in `month_year`.
+
+    Pull the last seen month (chronologically), plus the premium and com_rate
+    from that last month (not the max values overall).
+
+    Columns left blank per template:
+      HOLDER / SURNAME / OTHER_NAME / POLICY TYPE / Expected Premium / Expected Com Rate / REMARKS
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH per_policy AS (
+                    SELECT
+                        policy_no,
+                        MAX(STR_TO_DATE(MONTH_YEAR, '%b %Y')) AS last_month_dt
+                    FROM `statement`
+                    WHERE `agent_code`=%s
+                    GROUP BY policy_no
+                ),
+                last_rows AS (
+                    SELECT
+                        s.policy_no,
+                        p.last_month_dt,
+                        DATE_FORMAT(STR_TO_DATE(s.MONTH_YEAR, '%b %Y'), '%b %Y') AS last_seen_month,
+                        s.premium AS last_premium,
+                        s.com_rate AS last_com_rate
+                    FROM `statement` s
+                    JOIN per_policy p
+                      ON p.policy_no = s.policy_no
+                     AND STR_TO_DATE(s.MONTH_YEAR, '%b %Y') = p.last_month_dt
+                    WHERE s.`agent_code`=%s
+                )
+                SELECT
+                    lr.policy_no,
+                    lr.last_seen_month,
+                    lr.last_premium,
+                    lr.last_com_rate
+                FROM last_rows lr
+                WHERE lr.last_month_dt < STR_TO_DATE(%s, '%b %Y')
+                ORDER BY lr.policy_no ASC
+                """,
+                (agent_code, agent_code, month_year),
+            )
+            rows = list(cur.fetchall() or [])
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                out.append(
+                    {
+                        "policy_no": r.get("policy_no"),
+                        "holder": "",
+                        "surname": "",
+                        "other_name": "",
+                        "policy_type": "",
+                        "last_seen_month": r.get("last_seen_month"),
+                        "last_premium": r.get("last_premium"),
+                        "expected_premium": "",
+                        "last_com_rate": r.get("last_com_rate"),
+                        "expected_com_rate": "",
+                        "remarks": "",
+                    }
+                )
+            return out
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+def _count_terminated(agent_code: str, month_year: str) -> int:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM `terminated` WHERE `agent_code`=%s AND `month_year`=%s",
+                (agent_code, month_year),
+            )
+            r = cur.fetchone() or {}
+            return int(r.get("cnt") or 0)
+    finally:
+        conn.close()
+
+def _multiple_entries_all(agent_code: str, month_year: str) -> List[Dict[str, Any]]:
+    """All duplicate entries in month, with count & total premium; holder/name/type left blank per template."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT policy_no, COUNT(*) AS entries, COALESCE(SUM(premium),0.0) AS total_premium
+                FROM `statement`
+                WHERE `agent_code`=%s AND `MONTH_YEAR`=%s
+                GROUP BY policy_no
+                HAVING COUNT(*) > 1
+                ORDER BY policy_no
+                """,
+                (agent_code, month_year),
+            )
+            rows = list(cur.fetchall() or [])
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                out.append(
+                    {
+                        "policy_no": r.get("policy_no"),
+                        "entries": r.get("entries"),
+                        "holder": "",
+                        "surname": "",
+                        "other_name": "",
+                        "policy_type": "",
+                        "total_premium": r.get("total_premium"),
+                        "remark": "",  # blank
+                    }
+                )
+            return out
+    finally:
+        conn.close()
+
+def _inception_inconsistency_all(agent_code: str) -> List[Dict[str, Any]]:
+    """
+    All inception vs first_seen inconsistencies across agent, computed in one query.
+    We include only rows where both dates are present and different.
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH agg AS (
+                    SELECT
+                        policy_no,
+                        MIN(pay_date) AS first_seen_date,
+                        MAX(inception) AS inception,
+                        COALESCE(SUM(premium), 0.0) AS total_premium
+                    FROM `statement`
+                    WHERE `agent_code`=%s
+                    GROUP BY policy_no
+                )
+                SELECT
+                    policy_no,
+                    total_premium,
+                    inception,
+                    first_seen_date
+                FROM agg
+                WHERE inception IS NOT NULL
+                  AND first_seen_date IS NOT NULL
+                  AND DATE(inception) <> DATE(first_seen_date)
+                """,
+                (agent_code,),
+            )
+            rows = list(cur.fetchall() or [])
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                out.append(
+                    {
+                        "policy_no": r.get("policy_no"),
+                        "holder": "",
+                        "surname": "",
+                        "other_name": "",
+                        "policy_type": "",
+                        "total_premium": r.get("total_premium"),
+                        "inception_statement": r.get("inception"),
+                        "inception_active": r.get("first_seen_date"),
+                        "actual_inception_date": "",  # blank for agent to fill
+                    }
+                )
+            return out
+    finally:
+        conn.close()
+
+def _should_be_terminated_all(agent_code: str, month_year: str) -> List[Dict[str, Any]]:
+    """Policies previously terminated but appearing in this month (reliable date comparison)."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT policy_no,
+                       DATE_FORMAT(STR_TO_DATE(month_year, '%b %Y'), '%b %Y') AS term_my
+                FROM `terminated`
+                WHERE `agent_code`=%s
+                  AND STR_TO_DATE(month_year, '%b %Y') <= STR_TO_DATE(%s, '%b %Y')
+                """,
+                (agent_code, month_year),
+            )
+            terminated_rows = list(cur.fetchall() or [])
+            terminated_map = {
+                r["policy_no"]: r["term_my"]
+                for r in terminated_rows
+                if r.get("policy_no")
+            }
+
+            cur.execute(
+                """
+                SELECT DISTINCT policy_no
+                FROM `statement`
+                WHERE `agent_code`=%s
+                  AND STR_TO_DATE(MONTH_YEAR, '%b %Y') = STR_TO_DATE(%s, '%b %Y')
+                """,
+                (agent_code, month_year),
+            )
+            appear = [
+                r.get("policy_no")
+                for r in (cur.fetchall() or [])
+                if r.get("policy_no")
+            ]
+
+            out: List[Dict[str, Any]] = []
+            for p in appear:
+                if p in terminated_map:
+                    out.append(
+                        {
+                            "policy_no": p,
+                            "holder": "",
+                            "surname": "",
+                            "other_name": "",
+                            "policy_type": "",
+                            "terminated_month_year": terminated_map[p],
+                            "remarks": "",  # ERROR / RESTARTED — blank
+                        }
+                    )
+            return out
+    finally:
+        conn.close()
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Core computation
+# ────────────────────────────────────────────────────────────────────────────────
+
+def compute_month_summary(agent_code: str, month_year: str) -> Dict[str, Any]:
+    """
+    Monthly Report data aligned to Commission Comparison (Net) spec and dashboard summary:
+    - Commission Comparison (Net) with REPORTED / PAID / EXPECTED
+      * GOV TAX always 10% of GROSS (per column)
+      * SICLASE, PREMIUM DEDUCTIONS, PENSIONS (from latest schedule) applied to all three columns
+      * TOTAL DEDUCTIONS = GOV TAX + SICLASE + PREMIUM DEDUCTIONS + PENSIONS (+ WELFAREKO if toggled)
+      * NET COMMISSION   = GROSS − TOTAL DEDUCTIONS
+      + DIFF rows (VS REPORTED / VS PAID / VS EXPECTED)
+    - Missing Policies (ALL)
+    - Audit counts + duplicates + inception inconsistencies + should-be-terminated
+    """
+    assert isinstance(agent_code, str)
+    assert isinstance(month_year, str)
+    month_year = cast(str, month_year)
+
+    policies_reported, total_premium_reported = _sum_statement_premium(
+        agent_code, month_year
+    )
+
+    gross_reported = _sum_statement_commission(agent_code, month_year)  # statement
+    schedule = _fetch_schedule_latest(agent_code, month_year)
+
+    # Gross PAID (schedule income)
+    gross_paid = float(schedule.get("income") or 0.0)
+
+    # Gross EXPECTED from expected_commissions over canonical period key
+    period_key: str = _safe_period_key(month_year)
+    gross_expected = _sum_expected_commission(agent_code, period_key)
+
+    # 10% Gov tax (per column) with Decimal precision
+    tax_reported = _ten_percent(gross_reported)
+    tax_paid = _ten_percent(gross_paid)
+    tax_expected = _ten_percent(gross_expected)
+
+    # Components (from latest schedule), applied to all columns
+    comp_siclase = _money(schedule.get("siclase"))
+    comp_prem = _money(schedule.get("premium_deduction"))
+    comp_pensions = _money(schedule.get("pensions"))
+    comp_welfareko = _money(schedule.get("welfareko"))
+
+    extra = comp_welfareko if INCLUDE_WELFARE_IN_DEDUCTIONS else 0.0
+
+    # TOTAL DEDUCTIONS per column
+    total_ded_reported = _money(tax_reported + comp_siclase + comp_prem + comp_pensions + extra)
+    total_ded_paid = _money(tax_paid + comp_siclase + comp_prem + comp_pensions + extra)
+    total_ded_expected = _money(tax_expected + comp_siclase + comp_prem + comp_pensions + extra)
+
+    # NETS per column
+    net_reported = _money(_to_dec(gross_reported) - _to_dec(total_ded_reported))
+    net_paid = _money(_to_dec(gross_paid) - _to_dec(total_ded_paid))
+    net_expected = _money(_to_dec(gross_expected) - _to_dec(total_ded_expected))
+
+    # DIFF bundles as per spec:
+    # DIFF VS REPORTED: [0, NET_REPORTED − NET_PAID, NET_REPORTED − NET_EXPECTED]
+    diff_vs_reported = {
+        "reported": 0.0,
+        "paid": _money(_to_dec(net_reported) - _to_dec(net_paid)),
+        "expected": _money(_to_dec(net_reported) - _to_dec(net_expected)),
+    }
+    # DIFF VS PAID: [NET_PAID − NET_REPORTED, 0, NET_PAID − NET_EXPECTED]
+    diff_vs_paid = {
+        "reported": _money(_to_dec(net_paid) - _to_dec(net_reported)),
+        "paid": 0.0,
+        "expected": _money(_to_dec(net_paid) - _to_dec(net_expected)),
+    }
+    # DIFF VS EXPECTED: [NET_EXPECTED − NET_REPORTED, NET_EXPECTED − NET_PAID, 0]
+    diff_vs_expected = {
+        "reported": _money(_to_dec(net_expected) - _to_dec(net_reported)),
+        "paid": _money(_to_dec(net_expected) - _to_dec(net_paid)),
+        "expected": 0.0,
+    }
+
+    # Back-compat variance vs expected (net)
+    variance_amount = _money(_to_dec(net_reported) - _to_dec(net_expected))
+    variance_percent = _money((_to_dec(variance_amount) / _to_dec(net_expected) * Decimal("100")) if net_expected else Decimal("0"))
+
+    # Counts + lists
+    missing_all = _fetch_missing_policies(agent_code, month_year)
+    terminated_count = _count_terminated(agent_code, month_year)
+    dups_all = _multiple_entries_all(agent_code, month_year)
+    incs_all = _inception_inconsistency_all(agent_code)
+    sbt_all = _should_be_terminated_all(agent_code, month_year)
+    audit_issues_count = len(dups_all) + len(incs_all) + len(sbt_all)
+
+    return {
+        "policies_reported": policies_reported,
+        "total_premium_expected": None,  # not computed in current scope
+        "total_premium_reported": total_premium_reported,
+        "variance_amount": variance_amount,
+        "variance_percentage": variance_percent,
+        "commission": {
+            "reported": {
+                "gross": _money(gross_reported),
+                "gov_tax": tax_reported,
+                "siclase": comp_siclase,
+                "premium_deductions": comp_prem,
+                "pensions": comp_pensions,
+                "welfareko": comp_welfareko,
+                "total_deductions": total_ded_reported,
+                "net": net_reported,
+            },
+            "paid": {
+                "gross": _money(gross_paid),
+                "gov_tax": tax_paid,
+                "siclase": comp_siclase,
+                "premium_deductions": comp_prem,
+                "pensions": comp_pensions,
+                "welfareko": comp_welfareko,
+                "total_deductions": total_ded_paid,
+                "net": net_paid,
+            },
+            "expected": {
+                "gross": _money(gross_expected),
+                "gov_tax": tax_expected,
+                "siclase": comp_siclase,
+                "premium_deductions": comp_prem,
+                "pensions": comp_pensions,
+                "welfareko": comp_welfareko,
+                "total_deductions": total_ded_expected,
+                "net": net_expected,
+            },
+        },
+        "diffs": {
+            "vs_reported": diff_vs_reported,
+            "vs_paid": diff_vs_paid,
+            "vs_expected": diff_vs_expected,
+        },
+        "missing_all": missing_all,
+        "audit_counts": {
+            "data_quality_issues": audit_issues_count,
+            "commission_mismatches": 1 if abs(variance_amount) > 0.00001 else 0,
+            "terminated_policies_in_month": terminated_count,
+        },
+        "dups_all": dups_all,
+        "incs_all": incs_all,
+        "sbt_all": sbt_all,
+    }
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Styled PDF output (Platypus) – Commission grid per spec + sections
+# ────────────────────────────────────────────────────────────────────────────────
+
+def local_and_gcs(
+    agent_code: str,
+    agent_name: str,
+    month_year: str,
+    out_dir: Path,
+    user_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Render PDF aligned to the template (soft green theme)
+    with:
+      - Small blank margins
+      - Centered section titles
+      - Left-aligned tables
+      - Clear visual separators between sections
+      - Commission Comparison (Net) grid + DIFF rows in one section,
+        laid out as:
+
+        ROW TITLE | REPORTED | PAID | EXPECTED
+        GROSS COMMISSION ...
+        ...
+        NET COMMISSION ...
+        [blank row]
+        DIFF VS REPORTED ...
+        DIFF VS PAID ...
+        DIFF VS EXPECTED ...
+    """
+    assert isinstance(agent_code, str)
+    assert isinstance(agent_name, str)
+    assert isinstance(month_year, str)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    period: str = _safe_period_key(month_year)
+    file_stem = f"ICRS_{agent_code}_{period}"
+    pdf_path = out_dir / f"{file_stem}.pdf"
+
+    summary = compute_month_summary(agent_code, month_year)
+
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Table,
+            TableStyle,
+        )
+        from reportlab.platypus.flowables import HRFlowable
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.lib.enums import TA_CENTER
+
+        # Optional fonts
+        fonts_dir = Path("assets") / "fonts"
+
+        def _register_font(name: str, file: str) -> None:
+            path = fonts_dir / file
+            if path.exists():
+                pdfmetrics.registerFont(TTFont(name, str(path)))
+
+        _register_font("Montserrat", "Montserrat-Regular.ttf")
+        _register_font("Montserrat-Bold", "Montserrat-Bold.ttf")
+        _register_font("SourceSans", "SourceSans3-Regular.ttf")
+        _register_font("SourceSans-Semibold", "SourceSans3-Semibold.ttf")
+
+        BODY_FONT = (
+            "SourceSans"
+            if "SourceSans" in pdfmetrics.getRegisteredFontNames()
+            else "Helvetica"
+        )
+        BOLD_FONT = (
+            "SourceSans-Semibold"
+            if "SourceSans-Semibold" in pdfmetrics.getRegisteredFontNames()
+            else "Helvetica-Bold"
+        )
+        TITLE_FONT = (
+            "Montserrat-Bold"
+            if "Montserrat-Bold" in pdfmetrics.getRegisteredFontNames()
+            else BOLD_FONT
+        )
+
+        styles = getSampleStyleSheet()
+        styles.add(
+            ParagraphStyle(
+                name="DocTitle",
+                fontName=TITLE_FONT,
+                fontSize=16,
+                leading=18,
+                textColor=colors.HexColor("#1F2937"),
+                spaceAfter=8,
+                alignment=TA_CENTER,
+            )
+        )
+        styles.add(
+            ParagraphStyle(
+                name="Meta",
+                fontName=BODY_FONT,
+                fontSize=10,
+                leading=13,
+                textColor=colors.HexColor("#374151"),
+                alignment=TA_CENTER,
+            )
+        )
+        styles.add(
+            ParagraphStyle(
+                name="SectionTitleCenter",
+                fontName=BOLD_FONT,
+                fontSize=12,
+                leading=14,
+                textColor=colors.HexColor("#065F46"),
+                spaceBefore=16,
+                spaceAfter=6,
+                alignment=TA_CENTER,
+            )
+        )
+        styles.add(
+            ParagraphStyle(
+                name="Body",
+                fontName=BODY_FONT,
+                fontSize=10,
+                leading=12.5,
+                textColor=colors.HexColor("#111827"),
+            )
+        )
+
+        PAGE_BG = colors.HexColor("#E8F5E9")
+
+        def _draw_bg(canvas, doc):
+            canvas.saveState()
+            canvas.setFillColor(PAGE_BG)
+            w, h = A4
+            # full-page colored bg; margins come from doc margins below
+            canvas.rect(0, 0, w, h, stroke=0, fill=1)
+            canvas.setFillColor(colors.HexColor("#374151"))
+            canvas.setFont(
+                BODY_FONT
+                if BODY_FONT in pdfmetrics.getRegisteredFontNames()
+                else "Helvetica",
+                8,
+            )
+            canvas.drawRightString(w - 25, 18, f"Page {canvas.getPageNumber()}")
+            canvas.restoreState()
+
+        # Small but clear margins
+        doc = SimpleDocTemplate(
+            str(pdf_path),
+            pagesize=A4,
+            leftMargin=36,   # ~0.5 inch
+            rightMargin=36,
+            topMargin=40,
+            bottomMargin=36,
+            title=f"ICRS Report - {agent_code} - {month_year}",
+            author="ICRS",
+        )
+
+        content: List[Any] = []
+
+        def make_table(
+            title: str,
+            rows: List[List[Any]],
+            col_widths: Optional[List[Optional[float]]] = None,
+        ) -> None:
+            """Add titled, left-aligned table with consistent styling."""
+            content.append(Paragraph(title, styles["SectionTitleCenter"]))
+            if not rows:
+                content.append(Paragraph("None", styles["Body"]))
+            else:
+                tbl = Table(rows, colWidths=col_widths, hAlign="LEFT")
+                tbl.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D1FAE5")),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#064E3B")),
+                            ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
+                            ("FONTNAME", (0, 1), (-1, -1), BODY_FONT),
+                            ("FONTSIZE", (0, 0), (-1, -1), 9),
+                            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#10B981")),
+                            (
+                                "ROWBACKGROUNDS",
+                                (0, 1),
+                                (-1, -1),
+                                [colors.whitesmoke, colors.HexColor("#ECFDF5")],
+                            ),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                            ("TOPPADDING", (0, 0), (-1, -1), 4),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                        ]
+                    )
+                )
+                content.append(tbl)
+            # Visual marker at end of each section
+            from reportlab.platypus import Spacer  # local import reuse
+            content.append(Spacer(1, 4))
+            content.append(
+                HRFlowable(
+                    width="100%", thickness=1, color=colors.HexColor("#9CA3AF")
+                )
+            )
+            content.append(Spacer(1, 6))
+
+        # Number formatting for PDF display
+        def fmt(x: Any) -> str:
+            try:
+                return f"{_money(x):,.2f}"
+            except Exception:
+                return "0.00"
+
+        # Title + meta
+        content.append(
+            Paragraph("Insurance Commission Reconciliation Report", styles["DocTitle"])
+        )
+        meta = (
+            f"<b>Agent:</b> {agent_name} ({agent_code}) &nbsp;&nbsp; "
+            f"<b>Period:</b> {month_year} &nbsp;&nbsp; "
+            f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        content.append(Paragraph(meta, styles["Meta"]))
+        content.append(Spacer(1, 10))
+
+        # ───────────────────────────────────────────────────────────
+        # Commission Comparison (Net) – grid + DIFF rows
+        # ───────────────────────────────────────────────────────────
+        c = summary.get("commission", {}) or {}
+        rep = c.get("reported", {}) or {}
+        paid = c.get("paid", {}) or {}
+        exp = c.get("expected", {}) or {}
+
+        diffs = summary.get("diffs", {}) or {}
+        vs_rep = diffs.get("vs_reported", {}) or {}
+        vs_paid = diffs.get("vs_paid", {}) or {}
+        vs_exp = diffs.get("vs_expected", {}) or {}
+
+        rows_commission: List[List[Any]] = [
+            ["ROW TITLE", "REPORTED", "PAID", "EXPECTED"],
+            ["GROSS COMMISSION",      fmt(rep.get("gross", 0.0)),           fmt(paid.get("gross", 0.0)),           fmt(exp.get("gross", 0.0))],
+            ["GOV TAX",               fmt(rep.get("gov_tax", 0.0)),         fmt(paid.get("gov_tax", 0.0)),         fmt(exp.get("gov_tax", 0.0))],
+            ["SICLASE",               fmt(rep.get("siclase", 0.0)),         fmt(paid.get("siclase", 0.0)),         fmt(exp.get("siclase", 0.0))],
+            ["PREMIUM DEDUCTIONS",    fmt(rep.get("premium_deductions", 0.0)), fmt(paid.get("premium_deductions", 0.0)), fmt(exp.get("premium_deductions", 0.0))],
+            ["PENSIONS",              fmt(rep.get("pensions", 0.0)),        fmt(paid.get("pensions", 0.0)),        fmt(exp.get("pensions", 0.0))],
+            ["TOTAL DEDUCTIONS",      fmt(rep.get("total_deductions", 0.0)), fmt(paid.get("total_deductions", 0.0)), fmt(exp.get("total_deductions", 0.0))],
+            ["NET COMMISSION",        fmt(rep.get("net", 0.0)),             fmt(paid.get("net", 0.0)),             fmt(exp.get("net", 0.0))],
+            ["", "", "", ""],  # spacer row
+            ["DIFF VS REPORTED",      fmt(0.0),                             fmt(vs_rep.get("paid", 0.0)),          fmt(vs_rep.get("expected", 0.0))],
+            ["DIFF VS PAID",          fmt(vs_paid.get("reported", 0.0)),    fmt(0.0),                              fmt(vs_paid.get("expected", 0.0))],
+            ["DIFF VS EXPECTED",      fmt(vs_exp.get("reported", 0.0)),     fmt(vs_exp.get("paid", 0.0)),          fmt(0.0)],
+        ]
+
+        make_table(
+            "Commission Comparison (Net)",
+            rows_commission,
+            col_widths=[140, None, None, None],
+        )
+
+        # ───────────────────────────────────────────────────────────
+        # Missing Policies (all)
+        # ───────────────────────────────────────────────────────────
+        rows_missing: List[List[Any]] = [
+            [
+                "Policy No",
+                "HOLDER",
+                "SURNAME",
+                "OTHER_NAME",
+                "POLICY TYPE",
+                "Last Seen Month",
+                "Last Premium",
+                "Expected Premium",
+                "Last Com Rate",
+                "Expected Com Rate",
+                "REMARKS (CLIENT NOT PAID / ACTUALLY MISSING / OTHER )",
+            ]
+        ]
+        for r in summary.get("missing_all", []):
+            rows_missing.append(
+                [
+                    r.get("policy_no", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                    r.get("last_seen_month", ""),
+                    r.get("last_premium", ""),
+                    "",
+                    r.get("last_com_rate", ""),
+                    "",
+                    "",
+                ]
+            )
+        make_table(
+            "Missing Policies (all)",
+            rows_missing,
+            col_widths=[
+                80, 80, 80, 80, 80, 90, 80, 90, 80, 90, None,
+            ],
+        )
+
+        # ───────────────────────────────────────────────────────────
+        # Audit / Discrepancies Overview
+        # ───────────────────────────────────────────────────────────
+        ac = summary.get("audit_counts", {}) or {}
+        make_table(
+            "Audit / Discrepancies Overview",
+            rows=[
+                ["Indicator", "Count"],
+                ["Data quality issues", ac.get("data_quality_issues", 0)],
+                ["Commission mismatches", ac.get("commission_mismatches", 0)],
+                [
+                    "Terminated policies in month",
+                    ac.get("terminated_policies_in_month", 0),
+                ],
+            ],
+            col_widths=[250, None],
+        )
+
+        # ───────────────────────────────────────────────────────────
+        # MULTIPLE_ENTRIES_IN_MONTH (all)
+        # ───────────────────────────────────────────────────────────
+        rows_dups: List[List[Any]] = [
+            [
+                "Policy No",
+                "Entries",
+                "HOLDER",
+                "SURNAME",
+                "OTHER_NAME",
+                "POLICY TYPE",
+                "Total Premium in Statement",
+                "REMARK",
+                "",
+                "",
+            ]
+        ]
+        for r in summary.get("dups_all", []):
+            rows_dups.append(
+                [
+                    r.get("policy_no", ""),
+                    r.get("entries", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                    r.get("total_premium", ""),
+                    "",
+                    "",
+                    "",
+                ]
+            )
+        make_table(
+            "MULTIPLE_ENTRIES_IN_MONTH (all)",
+            rows_dups,
+            col_widths=[80, 60, 80, 80, 80, 80, 120, 80, 60, 60],
+        )
+
+        # ───────────────────────────────────────────────────────────
+        # INCEPTION_FIRST_SEEN_INCONSISTENCY (all)
+        # ───────────────────────────────────────────────────────────
+        rows_incs: List[List[Any]] = [
+            [
+                "Policy No",
+                "HOLDER",
+                "SURNAME",
+                "OTHER_NAME",
+                "POLICY TYPE",
+                "Total Premium in Statement",
+                "Inception Date in Statement",
+                "Inception Date according to Active Policies",
+                "ACTUAL INCEPTION DATE (blank — agent to fill)",
+                "",
+            ]
+        ]
+        for r in summary.get("incs_all", []):
+            rows_incs.append(
+                [
+                    r.get("policy_no", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                    r.get("total_premium", ""),
+                    r.get("inception_statement", ""),
+                    r.get("inception_active", ""),
+                    "",
+                    "",
+                ]
+            )
+        make_table(
+            "INCEPTION_FIRST_SEEN_INCONSISTENCY (all)",
+            rows_incs,
+            col_widths=[80, 80, 80, 80, 80, 120, 130, 150, 150, 40],
+        )
+
+        # ───────────────────────────────────────────────────────────
+        # SHOULD_BE_TERMINATED
+        # ───────────────────────────────────────────────────────────
+        rows_sbt: List[List[Any]] = [
+            [
+                "Policy No",
+                "HOLDER",
+                "SURNAME",
+                "OTHER_NAME",
+                "POLICY TYPE",
+                "Terminated month year",
+                "REMARKS (ERROR / RESTARTED)",
+                "",
+                "",
+                "",
+            ]
+        ]
+        for r in summary.get("sbt_all", []):
+            rows_sbt.append(
+                [
+                    r.get("policy_no", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                    r.get("terminated_month_year", ""),
+                    "",
+                    "",
+                    "",
+                    "",
+                ]
+            )
+        make_table(
+            "SHOULD_BE_TERMINATED",
+            rows_sbt,
+            col_widths=[80, 80, 80, 80, 80, 140, 160, 60, 60, 60],
+        )
+
+        # Build without appending a trailing PageBreak() to avoid a blank last page
+        doc.build(content, onFirstPage=_draw_bg, onLaterPages=_draw_bg)
+
+        size = pdf_path.stat().st_size
+        if size <= 0:
+            raise RuntimeError("Generated PDF has zero size.")
+        return {"pdf_path": str(pdf_path), "pdf_size_bytes": int(size)}
+
+    except ImportError as e:
+        raise RuntimeError("ReportLab is not installed. Install `reportlab`.") from e
+    except Exception as e:
+        raise RuntimeError(f"PDF generation failed: {e}")
+
+# ────────────────────────────────────────────────────────────────────────────────
+# CSV builder – full monthly report content
+# ────────────────────────────────────────────────────────────────────────────────
+
+def build_csv_rows(agent_code: str, agent_name: str, month_year: str) -> List[List[Any]]:
+    """
+    Return a list of CSV rows (each row is a list) for the Monthly Report.
+
+    Includes:
+      - Header meta (agent, period)
+      - Commission Comparison (Net) grid + diff rows
+      - Missing Policies (all)
+      - Audit / Discrepancies Overview
+      - MULTIPLE_ENTRIES_IN_MONTH (all)
+      - INCEPTION_FIRST_SEEN_INCONSISTENCY (all)
+      - SHOULD_BE_TERMINATED
+    """
+    s = compute_month_summary(agent_code, month_year) or {}
+
+    commission = s.get("commission", {}) or {}
+    reported = commission.get("reported", {}) or {}
+    paid = commission.get("paid", {}) or {}
+    expected = commission.get("expected", {}) or {}
+
+    diffs = s.get("diffs", {}) or {}
+    vs_rep = diffs.get("vs_reported", {}) or {}
+    vs_paid = diffs.get("vs_paid", {}) or {}
+    vs_exp = diffs.get("vs_expected", {}) or {}
+
+    def _get(section: dict, key: str) -> float:
+        try:
+            return float(section.get(key) or 0.0)
+        except Exception:
+            return 0.0
+
+    def _f(x: Any) -> float:
+        try:
+            return float(x or 0.0)
+        except Exception:
+            return 0.0
+
+    rows: List[List[Any]] = []
+
+    # Meta
+    rows.append(["ICRS MONTHLY REPORT"])
+    rows.append(["AGENT CODE", agent_code])
+    rows.append(["AGENT NAME", agent_name])
+    rows.append(["MONTH", month_year])
+    rows.append([])
+
+    # Commission Comparison (Net)
+    rows.append(["Commission Comparison (Net)"])
+    rows.append(["ROW TITLE", "REPORTED", "PAID", "EXPECTED"])
+    rows.append(["GROSS COMMISSION", _get(reported, "gross"), _get(paid, "gross"), _get(expected, "gross")])
+    rows.append(["GOV TAX", _get(reported, "gov_tax"), _get(paid, "gov_tax"), _get(expected, "gov_tax")])
+    rows.append(["SICLASE", _get(reported, "siclase"), _get(paid, "siclase"), _get(expected, "siclase")])
+    rows.append(["PREMIUM DEDUCTIONS", _get(reported, "premium_deductions"), _get(paid, "premium_deductions"), _get(expected, "premium_deductions")])
+    rows.append(["PENSIONS", _get(reported, "pensions"), _get(paid, "pensions"), _get(expected, "pensions")])
+    rows.append(["TOTAL DEDUCTIONS", _get(reported, "total_deductions"), _get(paid, "total_deductions"), _get(expected, "total_deductions")])
+    rows.append(["NET COMMISSION", _get(reported, "net"), _get(paid, "net"), _get(expected, "net")])
+    rows.append([])
+
+    rows.append(["DIFF VS REPORTED", 0.0, _f(vs_rep.get("paid")), _f(vs_rep.get("expected"))])
+    rows.append(["DIFF VS PAID", _f(vs_paid.get("reported")), 0.0, _f(vs_paid.get("expected"))])
+    rows.append(["DIFF VS EXPECTED", _f(vs_exp.get("reported")), _f(vs_exp.get("paid")), 0.0])
+
+    rows.append([])
+    rows.append([])
+
+    # Missing Policies
+    rows.append(["Missing Policies (all)"])
+    rows.append(
+        [
+            "Policy No",
+            "HOLDER",
+            "SURNAME",
+            "OTHER_NAME",
+            "POLICY TYPE",
+            "Last Seen Month",
+            "Last Premium",
+            "Expected Premium",
+            "Last Com Rate",
+            "Expected Com Rate",
+            "REMARKS (CLIENT NOT PAID / ACTUALLY MISSING / OTHER )",
+        ]
+    )
+    for r in s.get("missing_all", []) or []:
+        rows.append(
+            [
+                r.get("policy_no", ""),
+                "",
+                "",
+                "",
+                "",
+                r.get("last_seen_month", ""),
+                r.get("last_premium", ""),
+                "",
+                r.get("last_com_rate", ""),
+                "",
+                "",
+            ]
+        )
+
+    rows.append([])
+    rows.append([])
+
+    # Audit / Discrepancies
+    ac = s.get("audit_counts", {}) or {}
+    rows.append(["Audit / Discrepancies Overview"])
+    rows.append(["Indicator", "Count"])
+    rows.append(["Data quality issues", ac.get("data_quality_issues", 0)])
+    rows.append(["Commission mismatches", ac.get("commission_mismatches", 0)])
+    rows.append(["Terminated policies in month", ac.get("terminated_policies_in_month", 0)])
+
+    rows.append([])
+    rows.append([])
+
+    # MULTIPLE_ENTRIES_IN_MONTH
+    rows.append(["MULTIPLE_ENTRIES_IN_MONTH (all)"])
+    rows.append(
+        [
+            "Policy No",
+            "Entries",
+            "HOLDER",
+            "SURNAME",
+            "OTHER_NAME",
+            "POLICY TYPE",
+            "Total Premium in Statement",
+            "REMARK",
+            "",
+            "",
+        ]
+    )
+    for r in s.get("dups_all", []) or []:
+        rows.append(
+            [
+                r.get("policy_no", ""),
+                r.get("entries", ""),
+                "",
+                "",
+                "",
+                "",
+                r.get("total_premium", ""),
+                "",
+                "",
+                "",
+            ]
+        )
+
+    rows.append([])
+    rows.append([])
+
+    # INCEPTION_FIRST_SEEN_INCONSISTENCY
+    rows.append(["INCEPTION_FIRST_SEEN_INCONSISTENCY (all)"])
+    rows.append(
+        [
+            "Policy No",
+            "HOLDER",
+            "SURNAME",
+            "OTHER_NAME",
+            "POLICY TYPE",
+            "Total Premium in Statement",
+            "Inception Date in Statement",
+            "Inception Date according to Active Policies",
+            "ACTUAL INCEPTION DATE (blank — agent to fill)",
+            "",
+        ]
+    )
+    for r in s.get("incs_all", []) or []:
+        rows.append(
+            [
+                r.get("policy_no", ""),
+                "",
+                "",
+                "",
+                "",
+                r.get("total_premium", ""),
+                r.get("inception_statement", ""),
+                r.get("inception_active", ""),
+                "",
+                "",
+            ]
+        )
+
+    rows.append([])
+    rows.append([])
+
+    # SHOULD_BE_TERMINATED
+    rows.append(["SHOULD_BE_TERMINATED"])
+    rows.append(
+        [
+            "Policy No",
+            "HOLDER",
+            "SURNAME",
+            "OTHER_NAME",
+            "POLICY TYPE",
+            "Terminated month year",
+            "REMARKS (ERROR / RESTARTED)",
+            "",
+            "",
+            "",
+        ]
+    )
+    for r in s.get("sbt_all", []) or []:
+        rows.append(
+            [
+                r.get("policy_no", ""),
+                "",
+                "",
+                "",
+                "",
+                r.get("terminated_month_year", ""),
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+
+    return rows

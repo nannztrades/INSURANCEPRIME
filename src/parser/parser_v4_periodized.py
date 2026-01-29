@@ -1,0 +1,86 @@
+﻿# src/parser/parser_v4_periodized.py
+from __future__ import annotations
+from typing import Optional
+import pandas as pd
+
+# Import your existing parser implementation
+from . import parser_db_ready_fixed_Version4 as _base
+from src.services.periods import to_period_key
+
+def _first_nonempty_str(series: pd.Series) -> Optional[str]:
+    if series is None:
+        return None
+    for v in series.astype(str):
+        sv = (v or "").strip()
+        if sv:
+            return sv
+    return None
+
+def _infer_period_from_any(df: pd.DataFrame) -> Optional[str]:
+    # Examine all object columns for MonthName + Year tokens
+    for col in df.columns:
+        if pd.api.types.is_object_dtype(df[col]):
+            s = df[col].astype(str)
+            # "Mon 2025" or "Month 2025"
+            m = s.str.extract(r"([A-Za-z]{3,})\s+(\d{4})", expand=True).dropna()
+            if not m.empty:
+                try:
+                    return to_period_key(f"{m.iloc[0,0]} {m.iloc[0,1]}")
+                except Exception:
+                    pass
+            # COM_JUN_2025 / COM-June-2025
+            m2 = s.str.extract(r"COM[_\-\s]+([A-Za-z]{3,})[_\-\s]+(\d{4})", expand=True).dropna()
+            if not m2.empty:
+                try:
+                    return to_period_key(f"{m2.iloc[0,0]} {m2.iloc[0,1]}")
+                except Exception:
+                    pass
+            # 2025/06 or 2025.6
+            m3 = s.str.extract(r"(\d{4})[./](\d{1,2})", expand=True).dropna()
+            if not m3.empty:
+                try:
+                    return f"{m3.iloc[0,0]}-{int(m3.iloc[0,1]):02d}"
+                except Exception:
+                    pass
+    return None
+
+def _normalize_df_month(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+
+    candidates = [c for c in ["MONTH_YEAR","month_year","Period","period","report_period"] if c in df.columns]
+    period: Optional[str] = None
+
+    for c in candidates:
+        sv = _first_nonempty_str(df[c])
+        if sv:
+            try:
+                period = to_period_key(sv)
+                break
+            except Exception:
+                period = None
+
+    if period is None:
+        period = _infer_period_from_any(df)
+
+    if period:
+        if "MONTH_YEAR" in df.columns:
+            df["MONTH_YEAR"] = period
+        elif "month_year" in df.columns:
+            df["month_year"] = period
+        else:
+            df["MONTH_YEAR"] = period
+
+    return df
+
+def extract_statement_data(path: str):
+    df = _base.extract_statement_data(path)
+    return _normalize_df_month(df)
+
+def extract_schedule_data(path: str):
+    df = _base.extract_schedule_data(path)
+    return _normalize_df_month(df)
+
+def extract_terminated_data(path: str):
+    df = _base.extract_terminated_data(path)
+    return _normalize_df_month(df)

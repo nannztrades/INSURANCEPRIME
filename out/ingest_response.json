@@ -1,0 +1,10 @@
+{
+  "status": "success",
+  "message": "PDF uploaded and processed.",
+  "upload_id": 39,
+  "records_count": 754,
+  "agent_code": "9518",
+  "doc_type": "STATEMENT",
+  "month_year": "Jun 2025",
+  "file_saved_as": "Statement for June 2025 2.pdf"
+}

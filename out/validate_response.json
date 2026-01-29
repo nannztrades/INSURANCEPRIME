@@ -1,0 +1,16 @@
+{
+  "status": "VALIDATED",
+  "validated": true,
+  "agent_code": "9518",
+  "month_year": "Jun 2025",
+  "file_type": "statement",
+  "size_bytes": 234498,
+  "markers_expected": [
+    "policy",
+    "premium",
+    "commission",
+    "pay date"
+  ],
+  "markers_matched": 3,
+  "marker_match_ratio": 0.75
+}

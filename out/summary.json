@@ -1,0 +1,19 @@
+{
+  "base_url": "http://localhost:8000",
+  "agent_code": "9518",
+  "agent_name": "David Ferka",
+  "month_year": "Jun 2025",
+  "upload_id": 39,
+  "records_ingested": 754,
+  "statements_sample_count": 5,
+  "tracker_row_for_month": {
+    "month_year": "Jun 2025",
+    "statement_present": 1,
+    "schedule_present": 1,
+    "terminated_present": 1,
+    "statement_upload_id": 39,
+    "schedule_upload_id": 8,
+    "terminated_upload_id": null
+  },
+  "timestamp": "2026-01-17 15:50:21"
+}

@@ -1,0 +1,1 @@
+mysql -h 127.0.0.1 -u nana -p insurancelocal < db/period_yyyy_mm_postcheck_and_fixes.sql

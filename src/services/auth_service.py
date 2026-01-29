@@ -1,92 +1,195 @@
 
 # src/services/auth_service.py
 from __future__ import annotations
-import os, json, hmac, hashlib, time, base64
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+import json, uuid, hmac, hashlib
+import jwt  # PyJWT
+from passlib.hash import argon2
+from src.ingestion.db import get_conn
+from src.services.config import (
+    JWT_SECRET, ACCESS_TOKEN_TTL_MIN, REFRESH_TOKEN_TTL_DAYS, TOKEN_ISSUER,
+    AUTH_COOKIE_SECURE, AUTH_COOKIE_SAMESITE, COOKIE_DOMAIN,
+)
 
-# Environment-driven configuration
-AUTH_SECRET = os.getenv("AUTH_SECRET", "dev-secret-change-me")
-TOKEN_COOKIE_NAME = os.getenv("AUTH_COOKIE", "access_token")
-DEFAULT_EXP_MINUTES = int(os.getenv("AUTH_EXP_MINUTES", str(7 * 24 * 60)))  # default 7 days
+# ── Cookie names (keep legacy name for access to avoid breaking UI/routes) ──
+TOKEN_COOKIE_NAME = "access_token"
+REFRESH_COOKIE_NAME = "refresh_token"
 
-def _b64url_encode(data: bytes) -> str:
-    """Base64 URL-safe encoding without padding."""
-    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+ALG = "HS256"
 
-def _b64url_decode(s: str) -> bytes:
-    """Base64 URL-safe decoding with restored padding."""
-    pad = "=" * ((4 - len(s) % 4) % 4)
-    return base64.urlsafe_b64decode(s + pad)
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
-def create_token(payload: Dict[str, Any], exp_minutes: int = DEFAULT_EXP_MINUTES) -> str:
+# ───────────────────────────────────────────────────────────────────────────────
+# Password hashing (Argon2) – keep API you already call elsewhere
+# ───────────────────────────────────────────────────────────────────────────────
+def hash_password(plaintext: str) -> str:
+    return argon2.hash(plaintext)
+
+def verify_password(plaintext: str, hashed: str) -> bool:
+    try:
+        return argon2.verify(plaintext, hashed)
+    except Exception:
+        return False
+
+def verify_and_upgrade_password(plaintext: str, hashed: str) -> Tuple[bool, Optional[str]]:
     """
-    Create a compact HS256-signed token (JWT-like) without external deps.
-    Includes standard 'iat' and 'exp' claims.
-    """
-    header = {"alg": "HS256", "typ": "JWT"}
-    now = int(time.time())
-
-    body = dict(payload)
-    body["iat"] = now
-    body["exp"] = now + exp_minutes * 60
-
-    h = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
-    p = _b64url_encode(json.dumps(body, separators=(",", ":")).encode())
-
-    signing_input = f"{h}.{p}".encode()
-    sig = hmac.new(AUTH_SECRET.encode(), signing_input, hashlib.sha256).digest()
-    s = _b64url_encode(sig)
-
-    return f"{h}.{p}.{s}"
-
-def decode_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Verify and decode the token. Returns payload dict or None if invalid/expired.
+    Verify and optionally upgrade hash params. Returns (ok, new_hash_or_None).
     """
     try:
-        h, p, s = token.split(".")
-        signing_input = f"{h}.{p}".encode()
-        expected = hmac.new(AUTH_SECRET.encode(), signing_input, hashlib.sha256).digest()
+        ok = argon2.verify(plaintext, hashed)
+        if not ok:
+            return False, None
+        # 'needs_update' will depend on passlib policy; regenerate hash if needed
+        if argon2.identify(hashed) and argon2.needs_update(hashed):
+            return True, argon2.hash(plaintext)
+        return True, None
+    except Exception:
+        return False, None
 
-        # Constant-time comparison
-        if not hmac.compare_digest(expected, _b64url_decode(s)):
-            return None
+# ───────────────────────────────────────────────────────────────────────────────
+# JWT helpers: Access + Refresh with JTI
+# ───────────────────────────────────────────────────────────────────────────────
+def _base_claims() -> Dict[str, Any]:
+    return {"iss": TOKEN_ISSUER}
 
-        payload = json.loads(_b64url_decode(p).decode())
-        exp = int(payload.get("exp", 0))
-        if exp and int(time.time()) > exp:
-            return None
-        return payload
+def _encode(payload: Dict[str, Any], expires_in: timedelta) -> str:
+    now = _utcnow()
+    to_encode = {
+        **_base_claims(),
+        **payload,
+        "iat": int(now.timestamp()),
+        "exp": int((now + expires_in).timestamp()),
+    }
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=ALG)
+
+def _decode(token: str) -> Optional[Dict[str, Any]]:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[ALG], options={"require": ["exp", "iat"]})
     except Exception:
         return None
 
-def hash_password(password: str) -> str:
-    """
-    Hash a password using bcrypt if available; fallback to SHA-256 for dev.
-    NOTE: Use bcrypt in production. SHA-256 fallback is not suitable for prod.
-    """
-    try:
-        import bcrypt  # type: ignore
-        return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
-    except Exception:
-        # Development-only fallback
-        return hashlib.sha256(password.encode()).hexdigest()
+# Access token (short-lived)
+def create_access_token(identity: Dict[str, Any]) -> str:
+    return _encode({"typ": "access", **identity}, timedelta(minutes=ACCESS_TOKEN_TTL_MIN))
 
-def verify_password(password: str, stored_hash: str) -> bool:
-    """
-    Verify a password against a stored hash (supports bcrypt and SHA-256 fallback).
-    """
-    if not stored_hash:
-        return False
+# Refresh token (rotating; persists JTI in DB)
+def create_refresh_token(user_id: int, meta: Optional[Dict[str, Any]] = None) -> Tuple[str, str, datetime]:
+    jti = str(uuid.uuid4())
+    expires = _utcnow() + timedelta(days=REFRESH_TOKEN_TTL_DAYS)
+    tok = _encode({"typ": "refresh", "sub": str(user_id), "jti": jti, **(meta or {})},
+                  expires_in=timedelta(days=REFRESH_TOKEN_TTL_DAYS))
+    # Persist
+    conn = get_conn()
     try:
-        import bcrypt  # type: ignore
-        # Bcrypt hashes typically start with "$2"
-        if stored_hash.startswith("$2"):
-            return bcrypt.checkpw(password.encode(), stored_hash.encode())
-    except Exception:
-        # If bcrypt import fails or stored_hash isn't bcrypt, fall through to SHA-256
-        pass
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO `auth_refresh_tokens`
+                (`jti`,`user_id`,`issued_at`,`expires_at`,`rotated_from`,`is_revoked`,`client_fingerprint`,`ip_address`)
+                VALUES (%s,%s,UTC_TIMESTAMP(),%s,NULL,0,%s,%s)
+                """,
+                (jti, int(user_id), expires.strftime("%Y-%m-%d %H:%M:%S"), None, None),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return tok, jti, expires
 
-    # SHA-256 fallback comparison (constant-time)
-    candidate = hashlib.sha256(password.encode()).hexdigest()
-    return hmac.compare_digest(candidate, stored_hash)
+def revoke_refresh_jti(jti: str, reason: str = "logout", expires_at: Optional[datetime] = None) -> None:
+    # mark token row revoked & insert deny entry
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE `auth_refresh_tokens` SET `is_revoked`=1 WHERE `jti`=%s", (jti,))
+            cur.execute(
+                "INSERT IGNORE INTO `auth_token_denylist` (`jti`,`reason`,`created_at`,`expires_at`) VALUES (%s,%s,UTC_TIMESTAMP(),%s)",
+                (jti, reason, (expires_at or (_utcnow() + timedelta(days=REFRESH_TOKEN_TTL_DAYS))).strftime("%Y-%m-%d %H:%M:%S")),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+def is_denied(jti: str) -> bool:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM `auth_token_denylist` WHERE `jti`=%s LIMIT 1", (jti,))
+            row = cur.fetchone()
+            return bool(row)
+    finally:
+        conn.close()
+
+def rotate_refresh_token(old_jti: str, user_id: int, meta: Optional[Dict[str, Any]] = None) -> Tuple[str, str, datetime]:
+    # Issue a new RT and link back, then deny old
+    new_tok, new_jti, expires = create_refresh_token(user_id, meta=meta)
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE `auth_refresh_tokens` SET `is_revoked`=1 WHERE `jti`=%s", (old_jti,))
+            cur.execute("UPDATE `auth_refresh_tokens` SET `rotated_from`=%s WHERE `jti`=%s", (old_jti, new_jti))
+            cur.execute(
+                "INSERT IGNORE INTO `auth_token_denylist` (`jti`,`reason`,`created_at`,`expires_at`) VALUES (%s,%s,UTC_TIMESTAMP(),%s)",
+                (old_jti, "rotated", expires.strftime("%Y-%m-%d %H:%M:%S")),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return new_tok, new_jti, expires
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Public decode shims (keep names used across code)
+# ───────────────────────────────────────────────────────────────────────────────
+def decode_token(token: Optional[str]) -> Optional[Dict[str, Any]]:
+    """
+    Legacy-friendly: decode access token only (used by UI pages & roles).
+    """
+    if not token:
+        return None
+    claims = _decode(token)
+    if not claims or claims.get("typ") != "access":
+        return None
+    return claims
+
+def decode_refresh_token(token: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not token:
+        return None
+    claims = _decode(token)
+    if not claims or claims.get("typ") != "refresh":
+        return None
+    # deny-list check
+    jti = claims.get("jti")
+    if not jti or is_denied(jti):
+        return None
+    # check DB row status & expiry window
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT `is_revoked`,`expires_at` FROM `auth_refresh_tokens` WHERE `jti`=%s", (jti,))
+            row = cur.fetchone() or {}
+            if int(row.get("is_revoked") or 0) == 1:
+                return None
+    finally:
+        conn.close()
+    return claims
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Backward compatibility helpers used by current auth_api
+# ───────────────────────────────────────────────────────────────────────────────
+def create_token(payload: Dict[str, Any], ttl_minutes: int) -> str:
+    """Legacy: create an access token for given minutes (used by current login)."""
+    return _encode({"typ": "access", **payload}, timedelta(minutes=int(ttl_minutes)))
+
+# Cookie helpers (set flags in the routers)
+def cookie_args(max_age: int) -> Dict[str, Any]:
+    args: Dict[str, Any] = {
+        "httponly": True,
+        "secure": AUTH_COOKIE_SECURE,
+        "samesite": AUTH_COOKIE_SAMESITE,
+        "max_age": max_age,
+        "path": "/",
+    }
+    if COOKIE_DOMAIN:
+        args["domain"] = COOKIE_DOMAIN
+    return args

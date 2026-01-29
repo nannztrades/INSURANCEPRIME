@@ -1,24 +1,23 @@
 
 # src/cli/expected_for_upload.py
 from __future__ import annotations
-
 import argparse
 import json
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+import os
 
 from src.ingestion.db import get_conn
 from src.ingestion.commission import compute_expected_for_upload_dynamic, insert_expected_rows
 from src.reports.monthly_reports import local_and_gcs, _period_key_from_month_year, compute_month_summary
 
-# ------------------ Monthly Reports Row ------------------
-
+# --- Monthly Reports Row ---
 def _insert_monthly_report_row(
     conn: Any,
     agent_code: str,
     agent_name: str,
-    report_period: str,          # canonical YYYY-MM
+    report_period: str,  # canonical YYYY-MM
     upload_id: int,
     summary: dict,
     pdf_path: Optional[str],
@@ -26,7 +25,7 @@ def _insert_monthly_report_row(
     from decimal import Decimal
     total_reported = Decimal(str(summary.get('total_commission_reported', 0.0)))
     total_expected = Decimal(str(summary.get('total_commission_expected', 0.0)))
-    variance_amount = total_expected - total_reported
+    variance_amount = total_reported - total_expected
     variance_percentage = Decimal("0.00")
     if total_expected != Decimal("0.00"):
         variance_percentage = (variance_amount / total_expected * Decimal("100")).quantize(Decimal("0.01"))
@@ -38,28 +37,27 @@ def _insert_monthly_report_row(
     now_dt = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     pdf_size = 0
     try:
-        import os
         pdf_size = os.path.getsize(pdf_path) if pdf_path else 0
     except Exception:
         pdf_size = 0
 
     sql = """
-        INSERT INTO `monthly_reports`
-        (`agent_code`,`agent_name`,`report_period`,`upload_id`,
-         `policies_reported`,`total_premium`,`total_commission_reported`,
-         `total_commission_expected`,`variance_amount`,`variance_percentage`,
-         `missing_policies_count`,`commission_mismatches_count`,`data_quality_issues_count`,
-         `terminated_policies_count`,`overall_status`,`report_html`,
-         `report_pdf_path`,`report_pdf_s3_url`,`report_pdf_size_bytes`,
-         `report_pdf_generated_at`,`generated_at`)
-        VALUES
-        (%s,%s,%s,%s,
-         %s,%s,%s,
-         %s,%s,%s,
-         %s,%s,%s,
-         %s,%s,%s,
-         %s,%s,%s,
-         %s,%s)
+    INSERT INTO `monthly_reports`
+    (`agent_code`,`agent_name`,`report_period`,`upload_id`,
+     `policies_reported`,`total_premium`,`total_commission_reported`,
+     `total_commission_expected`,`variance_amount`,`variance_percentage`,
+     `missing_policies_count`,`commission_mismatches_count`,`data_quality_issues_count`,
+     `terminated_policies_count`,`overall_status`,`report_html`,
+     `report_pdf_path`,`report_pdf_s3_url`,`report_pdf_size_bytes`,
+     `report_pdf_generated_at`,`generated_at`)
+    VALUES
+    (%s,%s,%s,%s,
+     %s,%s,%s,
+     %s,%s,%s,
+     %s,%s,%s,
+     %s,%s,%s,
+     %s,%s,%s,
+     %s,%s)
     """
     with conn.cursor() as cur:
         cur.execute(sql, (
@@ -85,30 +83,29 @@ def _insert_monthly_report_row(
             now_dt if pdf_path else None,
             now_dt,
         ))
-    conn.commit()
+        conn.commit()
     return 1
 
-# ------------------ Monitoring (CLI runs) ------------------
-
+# --- Monitoring (CLI runs) ---
 def _ensure_cli_runs_table(conn: Any) -> None:
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS `cli_runs` (
-              `run_id` INT NOT NULL AUTO_INCREMENT,
-              `started_at` DATETIME NOT NULL,
-              `ended_at` DATETIME NULL,
-              `status` VARCHAR(20) NOT NULL,
-              `message` TEXT NULL,
-              `upload_id` INT NULL,
-              `agent_code` VARCHAR(50) NULL,
-              `report_period` VARCHAR(20) NULL,
-              `expected_rows_computed` INT NULL,
-              `expected_rows_inserted` INT NULL,
-              `pdf_path` VARCHAR(255) NULL,
-              PRIMARY KEY (`run_id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+        CREATE TABLE IF NOT EXISTS `cli_runs` (
+          `run_id` INT NOT NULL AUTO_INCREMENT,
+          `started_at` DATETIME NOT NULL,
+          `ended_at` DATETIME NULL,
+          `status` VARCHAR(20) NOT NULL,
+          `message` TEXT NULL,
+          `upload_id` INT NULL,
+          `agent_code` VARCHAR(50) NULL,
+          `report_period` VARCHAR(20) NULL,
+          `expected_rows_computed` INT NULL,
+          `expected_rows_inserted` INT NULL,
+          `pdf_path` VARCHAR(255) NULL,
+          PRIMARY KEY (`run_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
         """)
-    conn.commit()
+        conn.commit()
 
 def _log_cli_run_file(record: dict) -> None:
     log_dir = Path("logs")
@@ -122,11 +119,11 @@ def _log_cli_run_db(conn: Any, record: dict) -> None:
         _ensure_cli_runs_table(conn)
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO `cli_runs`
-                (`started_at`,`ended_at`,`status`,`message`,
-                 `upload_id`,`agent_code`,`report_period`,
-                 `expected_rows_computed`,`expected_rows_inserted`,`pdf_path`)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO `cli_runs`
+            (`started_at`,`ended_at`,`status`,`message`,
+             `upload_id`,`agent_code`,`report_period`,
+             `expected_rows_computed`,`expected_rows_inserted`,`pdf_path`)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 record["started_at"],
                 record.get("ended_at"),
@@ -142,11 +139,10 @@ def _log_cli_run_db(conn: Any, record: dict) -> None:
         conn.commit()
     except Exception as e:
         record["status"] = f"{record['status']} (file)"
-        record["message"] = f"{record.get('message','')} | db-log-failed: {e}"
+        record["message"] = f"{record.get('message','')} db-log-failed: {e}"
         _log_cli_run_file(record)
 
-# ------------------ Utility ------------------
-
+# --- Utility ---
 def _agent_list_for_scope(upload_id: Optional[int], month_year: Optional[str]) -> List[str]:
     """
     Returns distinct agent codes for the given upload or month label.
@@ -157,25 +153,24 @@ def _agent_list_for_scope(upload_id: Optional[int], month_year: Optional[str]) -
         with conn.cursor() as cur:
             if upload_id is not None:
                 cur.execute("""
-                    SELECT DISTINCT `agent_code`
-                    FROM `statement`
-                    WHERE `upload_id`=%s
-                    ORDER BY `agent_code`
+                SELECT DISTINCT `agent_code`
+                FROM `statement`
+                WHERE `upload_id`=%s
+                ORDER BY `agent_code`
                 """, (upload_id,))
             else:
                 cur.execute("""
-                    SELECT DISTINCT `agent_code`
-                    FROM `statement`
-                    WHERE `MONTH_YEAR`=%s
-                    ORDER BY `agent_code`
+                SELECT DISTINCT `agent_code`
+                FROM `statement`
+                WHERE `MONTH_YEAR`=%s
+                ORDER BY `agent_code`
                 """, (month_year,))
             rows = cur.fetchall() or []
             return [str(r.get("agent_code")) for r in rows if r.get("agent_code")]
     finally:
         conn.close()
 
-# ------------------ Main CLI ------------------
-
+# --- Main CLI ---
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Compute expected commissions, insert, render timestamped PDF, and log monthly report."
@@ -183,17 +178,26 @@ def main() -> None:
     ap.add_argument("--upload-id", type=int, required=True, help="Statement upload_id.")
     ap.add_argument("--agent-code", type=str, required=True, help="Agent code or 'ALL'.")
     ap.add_argument("--agent-name", type=str, help="Agent name (ignored for ALL).")
+    # Env-driven and cross-platform default for reports output
+    ap.add_argument(
+        "--out",
+        type=str,
+        default=os.getenv("REPORTS_DIR", "data/reports"),
+        help="Base reports directory (default: $REPORTS_DIR or 'data/reports').",
+    )
     ap.add_argument("--month-year", type=str, required=True, help="Month label (e.g., 'Jun 2025' or 'COM_JUN_2025').")
-    ap.add_argument("--out", type=str, default="D:/PROJECT/INSURANCELOCAL/reports", help="Base reports directory.")
     ap.add_argument("--user-id", type=int, help="ID of the user triggering the report (prefixes the PDF filename).")
     ap.add_argument("--skip-pdf", action="store_true", help="Skip PDF generation.")
     ap.add_argument("--dry-run", action="store_true", help="Compute only; do not insert expected rows.")
     ap.add_argument("--verbose", action="store_true", help="Verbose console output.")
-
     args = ap.parse_args()
+
+    # Ensure reports directory exists
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Batch mode: agent-name not required
+    # Batch mode
     if args.agent_code.strip().upper() == "ALL":
         agents = _agent_list_for_scope(args.upload_id, args.month_year)
         if args.verbose:
@@ -249,19 +253,21 @@ def _run_single_agent(args: Any, agent_code: str, agent_name: str, started_at: s
     inserted = 0
     if not args.dry_run:
         inserted = insert_expected_rows(rows_agent)
-        if args.verbose:
-            print(f"[insert-{agent_code}] inserted: {inserted}")
+    if args.verbose:
+        print(f"[insert-{agent_code}] inserted: {inserted}")
 
     # Render PDF (unless skip)
     pdf_meta = None
     if not args.skip_pdf:
+        Path(args.out).mkdir(parents=True, exist_ok=True)
         pdf_meta = local_and_gcs(agent_code, agent_name, args.month_year, Path(args.out), args.user_id)
-        if args.verbose:
-            print(f"[pdf-{agent_code}] {pdf_meta}")
+    if args.verbose:
+        print(f"[pdf-{agent_code}] {pdf_meta}")
 
     # Summary & monthly_reports insert
     summary = compute_month_summary(agent_code, args.month_year)
     report_period = _period_key_from_month_year(args.month_year) or args.month_year.replace('COM_', '').replace(' ', '-')
+
     conn = get_conn()
     try:
         _insert_monthly_report_row(
@@ -276,10 +282,9 @@ def _run_single_agent(args: Any, agent_code: str, agent_name: str, started_at: s
     finally:
         conn.close()
 
-    # >>> Added: emit discrepancies immediately after monthly_reports insert
+    # Emit discrepancies after insert
     from src.audit.discrepancies import emit_discrepancies_for_month
     emit_discrepancies_for_month(agent_code, args.month_year)
-    # <<< End added
 
     # Monitoring log
     record = {

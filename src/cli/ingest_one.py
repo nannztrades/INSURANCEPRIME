@@ -1,4 +1,4 @@
-
+﻿
 # src/cli/ingest_one.py
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 
 from src.ingestion.parser_db_integration import ParserDBIntegration
 from src.ingestion.run_logger import RunLogger
-from src.parser.parser_db_ready_fixed_Version4 import (
+from src.parser.parser_v4_periodized import (
     extract_statement_data,
     extract_schedule_data,
     extract_terminated_data,

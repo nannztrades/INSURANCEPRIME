@@ -1,0 +1,98 @@
+﻿
+# src/services/periods.py
+from __future__ import annotations
+
+import re
+from datetime import datetime
+from typing import Optional
+
+# Precompiled patterns for speed and clarity
+_RE_COM_PREFIX = re.compile(r"^\s*COM_", re.IGNORECASE)
+_RE_YYYY_MM = re.compile(r"^\s*(\d{4})[-/](0[1-9]|1[0-2])\s*$")
+_RE_YYYYMM  = re.compile(r"^\s*(\d{4})(0[1-9]|1[0-2])\s*$")
+
+# Accept both "Mon YYYY" and "Month YYYY"
+# We'll try '%b %Y' (e.g., Jun 2025) then '%B %Y' (e.g., June 2025).
+
+def _try_month_word(label: str) -> Optional[str]:
+    s = label.strip()
+    if not s:
+        return None
+    for fmt in ("%b %Y", "%B %Y"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return f"{dt.year:04d}-{dt.month:02d}"
+        except Exception:
+            pass
+    return None
+
+
+def canonicalize_period(value: Optional[str]) -> Optional[str]:
+    """
+    Convert common period labels to strict 'YYYY-MM'.
+
+    Examples:
+        '2025-06'   -> '2025-06'
+        '2025/06'   -> '2025-06'
+        '202506'    -> '2025-06'
+        'Jun 2025'  -> '2025-06'
+        'June 2025' -> '2025-06'
+        'COM_2025-06' -> '2025-06'
+        ' com_2024/01 ' -> '2024-01'
+
+    Returns:
+        'YYYY-MM' or None (if input is empty/None)
+    """
+    if value is None:
+        return None
+
+    s = value.strip()
+    if not s:
+        return None
+
+    # Drop known prefixes like "COM_"
+    s = _RE_COM_PREFIX.sub("", s).strip()
+
+    # Already YYYY-MM or YYYY/MM
+    m = _RE_YYYY_MM.match(s)
+    if m:
+        year, month = m.groups()
+        return f"{year}-{month}"
+
+    # Compact YYYYMM
+    m = _RE_YYYYMM.match(s)
+    if m:
+        year, month = m.groups()
+        return f"{year}-{month}"
+
+    # Month words ('Jun 2025' / 'June 2025')
+    word = _try_month_word(s)
+    if word:
+        return word
+
+    # As a last mild fallback, handle 'YYYY-M' (e.g., '2025-6')
+    # or 'YYYY/M' (e.g., '2025/6')
+    parts = re.split(r"[-/]", s)
+    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+        y, m2 = parts[0], parts[1]
+        if len(y) == 4 and 1 <= int(m2) <= 12:
+            return f"{y}-{int(m2):02d}"
+
+    # Unknown format → return original if it is already strict YYYY-MM, else None
+    return None
+
+
+def is_yyyy_mm(s: Optional[str]) -> bool:
+    """True if s is strictly 'YYYY-MM'."""
+    if s is None:
+        return False
+    return bool(_RE_YYYY_MM.match(s))
+
+
+def sort_key(period: str) -> str:
+    """
+    Return a key usable for sort operations when input might be non-canonical.
+    Always returns 'YYYY-MM' if it can; else returns the raw string.
+    """
+    c = canonicalize_period(period)
+    return c or str(period or "")

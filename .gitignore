@@ -45,3 +45,96 @@ desktop.ini
 
 # Cache dirs if created
 CACHEDIR.TAG
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.code-workspace
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+
+# Local env/secrets
+.env
+.env.*
+!/.env.example
+*.bak
+*bak*
+cookies.txt
+
+# Project artifacts
+reports/
+out/
+data/
+db/
+*.pdf
+*.html
+*.json
+*.csv
+
+# Test/log artifacts
+*.log
+pytest_*.txt
+
+# Misc
+*.swp
+*.swo
+
+
+
+@'
+# OS/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.code-workspace
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+
+# Local env/secrets
+.env
+.env.*
+!/.env.example
+*.bak
+*bak*
+cookies.txt
+
+# Project artifacts
+reports/
+out/
+data/
+db/
+*.pdf
+*.html
+*.json
+*.csv
+
+# Test/log artifacts
+*.log
+pytest_*.txt
+
+# Misc
+*.swp
+*.swo
+'@ | Out-File -FilePath .gitignore -Encoding UTF8 -Append

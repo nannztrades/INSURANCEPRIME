@@ -1,0 +1,7 @@
+
+# Activate venv and run the CLI
+python -m src.cli.reset_password --user-id 9 --new-password "test123"
+# Repeat for agents or other admins as needed
+python -m src.cli.reset_password --user-id 10 --new-password "test123"
+# Repeat for agents or other admins as needed
+python -m src.cli.reset_password --user-id 11 --new-password "test123"

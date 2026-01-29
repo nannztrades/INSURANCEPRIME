@@ -1,19 +1,28 @@
-
-# pyright: reportCallIssue=false
+﻿
 # src/api/ingestion_api.py
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from typing import Any, Dict, Optional, Annotated, Callable, cast
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from src.ingestion.parser_db_integration import ParserDBIntegration
 from src.ingestion.run_logger import RunLogger
-from src.ingestion.commission import compute_expected_for_upload_dynamic, insert_expected_rows
+from src.ingestion.commission import (
+    compute_expected_for_upload_dynamic,
+    insert_expected_rows,
+)
 
-# Import the parser module once; resolve and call inside a wrapper.
+# Import the parser module once; resolve callable names at runtime.
 import src.parser.parser_db_ready_fixed_Version4 as parser_v4
 
+from src.services.security import require_csrf
+
 router = APIRouter(prefix="/api/ingestion", tags=["Ingestion"])
+
+# Parameter-level dependency (editor-friendly)
+CSRF = Annotated[None, Depends(require_csrf)]
 
 
 def _as_int(value: Any) -> Optional[int]:
@@ -34,15 +43,45 @@ def _as_int(value: Any) -> Optional[int]:
 def _parse_with_v4(func_name: str, path: str) -> Any:
     """
     Resolve a symbol from parser_v4 and call it.
-    Encapsulating the call here prevents Pylance from flagging 'module is not callable' at call sites.
+    Encapsulating the call here prevents 'module is not callable' and offers
+    a single error path if the symbol isn't exposed.
     """
     obj = getattr(parser_v4, func_name, None)
     if obj is None or not callable(obj):
         raise HTTPException(
             status_code=500,
-            detail=f"Parser function '{func_name}' not available or not callable in parser_v4."
+            detail=f"Parser function '{func_name}' not available or not callable in parser_v4.",
         )
     return obj(path)
+
+
+def _get_ingest_callable(pdb: ParserDBIntegration) -> Callable[..., Dict[str, Any]]:
+    """
+    Fetch the ingestion method in a type-checker-friendly way.
+    Supports either 'ingest_dataframe' or 'ingest_df'.
+    """
+    fn = getattr(pdb, "ingest_dataframe", None)
+    if not callable(fn):
+        fn = getattr(pdb, "ingest_df", None)
+    if not callable(fn):
+        raise HTTPException(status_code=500, detail="No ingestion method found on ParserDBIntegration")
+    return cast(Callable[..., Dict[str, Any]], fn)
+
+
+def _log_error(logger: Any, msg: str) -> None:
+    """Log without tripping Pylance if the concrete API varies."""
+    for name in ("log_error", "error", "log"):
+        fn = getattr(logger, name, None)
+        if callable(fn):
+            try:
+                fn(msg)
+                return
+            except Exception:
+                pass
+    try:
+        print(f"[ingestion] {msg}")
+    except Exception:
+        pass
 
 
 @router.get("/health")
@@ -58,21 +97,22 @@ async def ingest_one(
     agent_name: Optional[str] = Form(None),
     month_year_hint: Optional[str] = Form(None),
     dry_run: bool = Form(False),
+    _csrf_ok: CSRF = Depends(),
 ) -> Dict[str, Any]:
-    try:
-        project_root = Path(__file__).resolve().parents[2]
-        logger = RunLogger(project_root)
+    project_root = Path(__file__).resolve().parents[2]
+    logger = RunLogger(project_root)
 
+    filename = file.filename or "upload.pdf"
+    try:
         content = await file.read()
         tmp = project_root / "tmp_ingestion_upload"
         tmp.mkdir(parents=True, exist_ok=True)
-        filename = file.filename or "upload.pdf"
         target = tmp / filename
         with target.open("wb") as f:
             f.write(content)
 
         # Parse to DataFrame based on doc_type via wrapper
-        doc = doc_type.lower().strip()
+        doc = (doc_type or "").lower().strip()
         if doc == "statement":
             df = _parse_with_v4("extract_statement_data", str(target))
         elif doc == "schedule":
@@ -80,127 +120,42 @@ async def ingest_one(
         elif doc == "terminated":
             df = _parse_with_v4("extract_terminated_data", str(target))
         else:
-            raise HTTPException(status_code=400, detail="Invalid doc_type")
+            raise HTTPException(status_code=400, detail=f"Unsupported doc_type: {doc_type}")
 
-        rows_raw: List[Dict[str, Any]] = [] if df is None else df.to_dict(orient="records")  # type: ignore[attr-defined]
-        # Normalize keys to str so type is precisely List[Dict[str, Any]]
-        rows: List[Dict[str, Any]] = [{str(k): v for k, v in r.items()} for r in rows_raw]
-
-        integ = ParserDBIntegration()
-        summary = integ.process(
-            doc_type_key=doc,
-            agent_code=str(agent_code or ""),
-            agent_name=agent_name or None,
-            df_rows=rows,
-            file_path=target,
-            month_year_hint=month_year_hint or None,
+        # Persist using a DB integration helper (Pylance-safe)
+        pdb = ParserDBIntegration()
+        ingest = _get_ingest_callable(pdb)
+        res = ingest(
+            df=df,
+            doc_type=doc,
+            source_filename=filename,
+            agent_code=agent_code,
+            agent_name=agent_name,
+            month_year_hint=month_year_hint,
+            dry_run=dry_run,
         )
-        summary.setdefault("status", "success")
-        logger.log_json(summary)
-        logger.log_csv(summary)
+        upload_id = _as_int(res.get("upload_id"))
 
-        # If statement & not dry_run, compute dynamic expected commissions
-        if (not dry_run) and summary.get("doc_type") == "STATEMENT" and summary.get("upload_id") is not None:
-            upid = _as_int(summary.get("upload_id"))
-            if upid is not None:
-                rows_exp = compute_expected_for_upload_dynamic(upload_id=upid)
-                inserted = insert_expected_rows(rows_exp)
-                summary["expected_rows_inserted"] = inserted
+        # Compute expected commissions & insert (Statements only, not dry_run)
+        if upload_id and not dry_run and doc == "statement":
+            # ✅ Correct signatures (keyword for compute; single-arg for insert)
+            expected_rows = compute_expected_for_upload_dynamic(upload_id=upload_id)
+            inserted = insert_expected_rows(expected_rows)  # noqa: F841
 
-        return summary
+        # Minimal structured response
+        return {
+            "status": "SUCCESS",
+            "doc_type": doc,
+            "upload_id": upload_id,
+            "dry_run": bool(dry_run),
+            "rows": _as_int(res.get("rows")) or 0,
+            "agent_code": agent_code,
+            "agent_name": agent_name,
+            "month_year_hint": month_year_hint,
+        }
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/bulk")
-async def ingest_bulk_dir(
-    dir_path: str = Form(...),  # e.g., "data/incoming"
-    override_agent_code: Optional[str] = Form(None),
-    override_agent_name: Optional[str] = Form(None),
-    dry_run: bool = Form(False),
-) -> Dict[str, Any]:
-    try:
-        project_root = Path(__file__).resolve().parents[2]
-        base = Path(dir_path)
-        if not base.exists() or not base.is_dir():
-            raise HTTPException(status_code=404, detail=f"Directory not found: {base}")
-
-        logger = RunLogger(project_root)
-        integ = ParserDBIntegration()
-        results: List[Dict[str, Any]] = []
-
-        for p in sorted(base.iterdir()):
-            if not p.is_file():
-                continue
-            name = p.name.lower()
-
-            # Resolve & call parser inside wrapper
-            if "statement" in name:
-                doc = "statement"
-                df = _parse_with_v4("extract_statement_data", str(p))
-            elif "schedule" in name:
-                doc = "schedule"
-                df = _parse_with_v4("extract_schedule_data", str(p))
-            elif "terminat" in name:
-                doc = "terminated"
-                df = _parse_with_v4("extract_terminated_data", str(p))
-            else:
-                continue
-
-            try:
-                rows_raw: List[Dict[str, Any]] = [] if df is None else df.to_dict(orient="records")  # type: ignore[attr-defined]
-                rows: List[Dict[str, Any]] = [{str(k): v for k, v in r.items()} for r in rows_raw]
-                summary = integ.process(
-                    doc_type_key=doc,
-                    agent_code=str(override_agent_code or ""),
-                    agent_name=override_agent_name or None,
-                    df_rows=rows,
-                    file_path=p,
-                    month_year_hint=None,
-                )
-                summary.setdefault("status", "success")
-                results.append(summary)
-                logger.log_json(summary)
-                logger.log_csv(summary)
-
-                if (not dry_run) and doc == "statement" and summary.get("upload_id") is not None:
-                    upid = _as_int(summary.get("upload_id"))
-                    if upid is not None:
-                        rows_exp = compute_expected_for_upload_dynamic(upload_id=upid)
-                        inserted = insert_expected_rows(rows_exp)
-                        logger.log_csv({
-                            'type': 'EXPECTED_COMMISSIONS',
-                            'file': p.name,
-                            'rows_parsed': len(rows_exp),
-                            'agent_code': summary.get('agent_code','') or (override_agent_code or ''),
-                            'agent_name': summary.get('agent_name','') or (override_agent_name or ''),
-                            'upload_id': summary.get('upload_id',''),
-                            'rows_inserted': inserted,
-                            'moved_to': summary.get('moved_to',''),
-                            'status': 'success',
-                            'error': ''
-                        })
-            except Exception as e:
-                err = {
-                    'type': 'ERROR',
-                    'file': p.name,
-                    'rows_parsed': '',
-                    'agent_code': override_agent_code or '',
-                    'agent_name': override_agent_name or '',
-                    'upload_id': '',
-                    'rows_inserted': '',
-                    'moved_to': '',
-                    'status': 'failure',
-                    'error': str(e)
-                }
-                results.append(err)
-                logger.log_csv(err)
-                logger.log_json(err)
-
-        return {"status": "OK", "count": len(results), "results": results}
-    except HTTPException:
-        raise
-    except Exception as e:
+        _log_error(logger, f"ingest_one failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

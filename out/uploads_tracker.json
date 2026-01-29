@@ -1,0 +1,50 @@
+{
+  "count": 5,
+  "items": [
+    {
+      "month_year": "Dec 2025",
+      "statement_present": 1,
+      "schedule_present": 0,
+      "terminated_present": 1,
+      "statement_upload_id": 18,
+      "schedule_upload_id": null,
+      "terminated_upload_id": 13
+    },
+    {
+      "month_year": "Aug 2025",
+      "statement_present": 0,
+      "schedule_present": 1,
+      "terminated_present": 0,
+      "statement_upload_id": null,
+      "schedule_upload_id": 6,
+      "terminated_upload_id": null
+    },
+    {
+      "month_year": "Jul 2025",
+      "statement_present": 0,
+      "schedule_present": 1,
+      "terminated_present": 0,
+      "statement_upload_id": null,
+      "schedule_upload_id": 7,
+      "terminated_upload_id": null
+    },
+    {
+      "month_year": "Jun 2025",
+      "statement_present": 1,
+      "schedule_present": 1,
+      "terminated_present": 1,
+      "statement_upload_id": 39,
+      "schedule_upload_id": 8,
+      "terminated_upload_id": null
+    },
+    {
+      "month_year": "May 2025",
+      "statement_present": 1,
+      "schedule_present": 1,
+      "terminated_present": 1,
+      "statement_upload_id": 2,
+      "schedule_upload_id": 9,
+      "terminated_upload_id": null
+    }
+  ]
+}

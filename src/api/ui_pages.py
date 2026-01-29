@@ -1,331 +1,315 @@
 
 # src/api/ui_pages.py
 from __future__ import annotations
-from typing import Optional, Dict, Any
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-import importlib, importlib.util
+from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 
-router = APIRouter(prefix="/ui", tags=["UI"])
+router = APIRouter(prefix="/ui", tags=["UI Pages"])
 
-def _opt_attr(module: str, attr: str):
-    spec = importlib.util.find_spec(module)
-    if not spec:
-        return None
-    try:
-        mod = importlib.import_module(module)
-        return getattr(mod, attr, None)
-    except Exception:
-        return None
-
-# Auth + DB helpers (optional enrichment)
-decode_token      = _opt_attr("src.services.auth_service", "decode_token")
-TOKEN_COOKIE_NAME = _opt_attr("src.services.auth_service", "TOKEN_COOKIE_NAME") or "access_token"
-get_conn          = _opt_attr("src.ingestion.db", "get_conn")
-
-def _get_current_user(request: Request) -> Optional[Dict[str, Any]]:
-    """Enrich identity from cookie token and DB (if available)."""
-    if not decode_token:
-        return None
-    token = request.cookies.get(TOKEN_COOKIE_NAME)
-    if not token:
-        return None
-    try:
-        payload = decode_token(token) or {}
-        uid = payload.get("user_id")
-        if not uid or not get_conn:
-            return payload
-        conn = get_conn()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id, email, agent_code, agent_name, role FROM `users` WHERE `id`=%s",
-                    (uid,)
-                )
-                row = cur.fetchone() or None
-                if row:
-                    payload.update(row)
-        finally:
-            conn.close()
-        return payload
-    except Exception:
-        return None
-
-@router.get("/", response_class=HTMLResponse)
-def landing(request: Request):
-    user = _get_current_user(request)
-
-    logged_in_html = ""
-    if user:
-        role = str(user.get("role") or "").lower()
-        email = user.get("email", user.get("user_email", ""))
-        agent_code = user.get("agent_code", "")
-        agent_name = user.get("agent_name") or (email or "Agent")
-
-        if role in ("admin", "superuser"):
-            logged_in_html = (
-                f"""
-            <div class="alert alert-success mb-4">
-              Logged in as <strong>{email}</strong> ({role})
-              <div class="mt-2 d-flex gap-2">
-                <a href="/ui/admin" class="btn btn-success btn-sm">Admin Dashboard</a>
-                <a href="/ui/agent" class="btn btn-outline-success btn-sm">Agent Selector</a>
-                <a href="/api/auth/logout" class="btn btn-outline-danger btn-sm">Logout</a>
-              </div>
-            </div>
-                """.strip()
-            )
-        else:
-            target = f"/ui/agent/{agent_code}" if agent_code else "/ui/agent"
-            logged_in_html = (
-                f"""
-            <div class="alert alert-success mb-4">
-              Logged in as <strong>{agent_name}</strong>
-              <div class="mt-2 d-flex gap-2">
-                <a href="{target}" class="btn btn-success btn-sm">My Dashboard</a>
-                <a href="/api/auth/logout" class="btn btn-outline-danger btn-sm">Logout</a>
-              </div>
-            </div>
-                """.strip()
-            )
-
-    # NOTE: All CSS/JS braces are doubled {{ }} to avoid f-string parsing.
-    html = f"""
-<!DOCTYPE html>
+def _base_html(body: str) -> str:
+    return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>ICRS - Insurance Commission Reconciliation</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" />
+  <meta charset="utf-8">
+  <title>ICRS · UI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"/>
   <style>
-    :root {{ --primary:#059669; --dark1:#1e1b4b; --dark2:#4f46e5; }}
-    body {{
-      background: linear-gradient(135deg, var(--dark1), var(--dark2));
-      min-height: 100vh; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
-    }}
-    .hero {{ padding: 80px 0; color: white; text-align: center; }}
-    .hero h1 {{ font-weight: 800; letter-spacing:.5px; font-size: 2.4rem; }}
-    .card-wrap {{ display:flex; justify-content:center; gap:28px; flex-wrap:wrap; margin-top:28px; }}
-    .card-lg {{
-      width: 380px; background:white; border-radius: 20px; padding: 36px;
-      box-shadow: 0 18px 60px rgba(0,0,0,.35); text-align:center;
-    }}
-    .card-compact {{
-      width: 260px; background:white; border-radius: 16px; padding: 22px;
-      box-shadow: 0 12px 40px rgba(0,0,0,.28); text-align:center; opacity:.92;
-    }}
-    .icon-pill {{
-      width:74px; height:74px; border-radius:50%; display:flex; align-items:center;
-      justify-content:center; margin: 0 auto 14px; font-size:32px; color:white;
-    }}
-    .icon-agent {{ background: linear-gradient(135deg, #22c55e, #059669); }}
-    .icon-admin {{ background: linear-gradient(135deg, #1e1b4b, #4f46e5); }}
-    .icon-super {{ background: linear-gradient(135deg, #0ea5e9, #2563eb); }}
-    .btn-primary-soft {{
-      background: linear-gradient(135deg, #22c55e, #059669); color: white; border: none;
-    }}
-    .btn-dark-soft {{ background: linear-gradient(135deg, #1e1b4b, #4f46e5); color: white; border:none; }}
-    .btn-blue-soft {{ background: linear-gradient(135deg, #0ea5e9, #2563eb); color: white; border:none; }}
-    .identity {{
-      position: fixed; left: 16px; bottom: 16px; background: rgba(255,255,255,.12);
-      border:1px solid rgba(255,255,255,.25); color:#fff; border-radius: 12px;
-      backdrop-filter: blur(6px); padding: 10px 14px; font-size:.9rem;
-    }}
-    .identity small {{ opacity:.85; }}
-    .w-100 {{ width:100%; }}
+  body {{ background:#f9fafb; }}
+  a.text-link {{ text-decoration:none }}
   </style>
 </head>
 <body>
-  <section class="hero">
-    <div class="container">
-      {logged_in_html}
-      <h1><i class="bi bi-shield-check"></i> ICRS</h1>
-      <p class="lead">Insurance Commission Reconciliation System</p>
-
-      <div class="card-wrap">
-        <!-- AGENT -->
-        <div class="card-lg">
-          <div class="icon-pill icon-agent"><i class="bi bi-person-badge"></i></div>
-          <h4>Agent Portal</h4>
-          <a href="/ui/login?role=agent" class="btn btn-primary-soft w-100">
-            <i class="bi bi-box-arrow-in-right me-2"></i> Agent Login
-          </a>
-          <div class="mt-3">
-            <a href="/ui/agent" class="btn btn-outline-success btn-sm">
-              <i class="bi bi-people"></i> Browse Agent Dashboards (admin-only)
-            </a>
-          </div>
-        </div>
-
-        <!-- ADMIN -->
-        <div class="card-compact">
-          <div class="icon-pill icon-admin"><i class="bi bi-shield-lock"></i></div>
-          <h5 class="mb-2">Admin</h5>
-          <a href="/ui/login?role=admin" class="btn btn-dark-soft w-100">
-            <i class="bi bi-box-arrow-in-right me-1"></i> Admin Login
-          </a>
-          <div class="mt-2">
-            <a href="/ui/admin" class="btn btn-outline-secondary btn-sm">
-              Open Admin Dashboard
-            </a>
-          </div>
-        </div>
-
-        <!-- SUPERUSER -->
-        <div class="card-compact">
-          <div class="icon-pill icon-super"><i class="bi bi-person-gear"></i></div>
-          <h5 class="mb-2">Superuser</h5>
-          <a href="/ui/login?role=superuser" class="btn btn-blue-soft w-100">
-            <i class="bi bi-box-arrow-in-right me-1"></i> Superuser Login
-          </a>
-        </div>
-      </div>
-
-      <p class="small text-light mt-4">
-        Email <a class="text-white" href="mailto:nannztrades@gmail.com">nannztrades@gmail.com</a> for enquiries or help.
-      </p>
-    </div>
-  </section>
-
-  <div class="identity" id="identityChip" style="display:none;">
-    <div><i class="bi bi-person-circle me-1"></i> <strong id="idLabel">User</strong></div>
-    <small id="emailLabel"></small>
-  </div>
-
-<script>
-  // Cookie-based identity (works in local dev with AUTH_COOKIE_SECURE=0, SameSite=lax)
-  async function refreshIdentityChip() {{
-    try {{
-      const r = await fetch('/api/auth/me', {{ method: 'GET', credentials: 'same-origin' }});
-      const j = await r.json();
-      if (!j || j.status !== 'OK' || !j.identity) return;
-      const id = j.identity.user_id || null;
-      const email = j.identity.user_email || j.identity.email || '';
-      document.getElementById('identityChip').style.display = 'block';
-      document.getElementById('idLabel').textContent = id ? ('ID ' + id) : 'User';
-      document.getElementById('emailLabel').textContent = email ? ('Email: ' + email) : '';
-    }} catch (e) {{
-      // Optional fallback to storage if needed
-      const sid = parseInt(sessionStorage.getItem('user_id') || localStorage.getItem('user_id'));
-      const semail = sessionStorage.getItem('user_email') || localStorage.getItem('user_email') || '';
-      if (!sid && !semail) return;
-      document.getElementById('identityChip').style.display = 'block';
-      document.getElementById('idLabel').textContent = sid ? ('ID ' + sid) : 'User';
-      document.getElementById('emailLabel').textContent = semail ? ('Email: ' + semail) : '';
-    }}
-  }}
-  refreshIdentityChip();
-</script>
+{body}
 </body>
-</html>
-    """
-    return HTMLResponse(content=html)
+</html>"""
 
-@router.get("/login", response_class=HTMLResponse)
-def login(request: Request):
-    role = str(request.query_params.get("role") or "").lower()
-    html = f"""
-<!DOCTYPE html>
+# ---------- Landing ----------
+@router.get("/", response_class=HTMLResponse)
+async def landing_page() -> HTMLResponse:
+    # Full-page landing with quick links to the dashboards
+    return HTMLResponse(r"""<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Login · ICRS</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" />
+  <meta charset="utf-8">
+  <title>ICRS · Welcome</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+  body{
+    margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:
+      radial-gradient(circle at 10% 10%, #22d3ee33 0, transparent 45%),
+      radial-gradient(circle at 90% 90%, #a855f733 0, transparent 45%),
+      #0b1020;
+    color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;
+  }
+  .wrap{max-width:980px;width:100%;padding:24px;position:relative}
+  .top-left{
+    position:absolute;left:24px;top:24px;display:flex;gap:.5rem;flex-wrap:wrap;
+  }
+  .btn-top{
+    --bs-btn-padding-y:.25rem; --bs-btn-padding-x:.6rem; --bs-btn-font-size:.72rem;
+    border-radius:999px; background:rgba(255,255,255,.08); color:#e5e7eb; border:1px solid rgba(255,255,255,.2)
+  }
+  .btn-top:hover{ background:rgba(255,255,255,.15); color:#fff }
+  .brand{display:flex;gap:12px;align-items:center;justify-content:center;margin-bottom:18px}
+  .brand .logo{font-size:20px}
+  .brand h1{font-size:20px;letter-spacing:.18em;text-transform:uppercase;margin:0}
+  .cardy{
+    background:#0f172a;border:1px solid #1f2937;border-radius:16px;padding:28px 22px;
+    box-shadow:0 24px 70px rgba(0,0,0,.6);
+  }
+  .btn-grad{background:linear-gradient(90deg,#22d3ee,#a855f7);border:none;border-radius:999px}
+  .agent-title{
+    display:flex;align-items:center;gap:.6rem;font-weight:800;font-size:1.35rem;letter-spacing:.02em;justify-content:center;
+  }
+  .footer{ margin-top:24px;text-align:center;color:#9ca3af;font-size:.9rem }
+  </style>
 </head>
-<body class="bg-light">
-  <div class="container py-5">
-    <h2 class="mb-4"><i class="bi bi-box-arrow-in-right"></i> Login</h2>
-
-    <ul class="nav nav-tabs">
-      <li class="nav-item"><a id="tab-agent" class="nav-link {'active' if role=='agent' else ''}" href="#agent" onclick="show('agent', this)">Agent</a></li>
-      <li class="nav-item"><a id="tab-admin" class="nav-link {'active' if role in ('admin','superuser') else ''}" href="#admin" onclick="show('admin', this)">Admin / Superuser</a></li>
-    </ul>
-
-    <div id="agent" class="p-3 border border-top-0 {'d-block' if role=='agent' else 'd-none'}">
-      <form onsubmit="return agentLogin(this)">
-        <div class="mb-3">
-          <label class="form-label">Agent Code</label>
-          <input name="agent_code" class="form-control" required />
-        </div>
-        <button class="btn btn-success w-100">Login as Agent</button>
-      </form>
+<body>
+  <div class="wrap">
+    <!-- Small Admin / Superuser buttons -->
+    <div class="top-left">
+      <a class="btn btn-top" href="/ui/login/admin" title="Admin Login" aria-label="Admin Login">🛡️</a>
+      <a class="btn btn-top" href="/ui/login/superuser" title="Superuser Login" aria-label="Superuser Login">⚖️</a>
     </div>
 
-    <div id="admin" class="p-3 border border-top-0 {'d-block' if role in ('admin','superuser') else 'd-none'}">
-      <form onsubmit="return adminLogin(this)">
-        <div class="row g-2">
-          <div class="col-md-6">
-            <label class="form-label">User ID (optional)</label>
-            <input name="user_id" class="form-control" type="number" />
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Email (optional)</label>
-            <input name="email" class="form-control" type="email" />
-          </div>
-        </div>
-        <div class="mt-3">
-          <label class="form-label">Password</label>
-          <input name="password" class="form-control" type="password" required />
-        </div>
-        <small class="text-muted">Provide either <strong>User ID</strong> or <strong>Email</strong>, plus password.</small>
-        <button class="btn btn-primary w-100 mt-3">Login as Admin/Superuser</button>
-      </form>
+    <!-- Centered Agent card -->
+    <div class="brand">
+      <div class="logo">🔐</div>
+      <h1>ICRS</h1>
     </div>
 
-    <div id="msg" class="alert alert-info mt-3 d-none"></div>
+    <div class="row justify-content-center">
+      <div class="col-md-6 col-lg-5">
+        <div class="cardy text-center">
+          <div class="agent-title mb-3"><span>Agent</span></div>
+          <a class="btn btn-grad w-100" href="/ui/agent/"><span class="me-1">➡</span>Open Agent Dashboard</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      contact <a class="text-link" href="mailto:nannztrades@gmail.com">nannztrades@gmail.com</a> for any info or assistance
+    </div>
   </div>
+</body>
+</html>""")
+
+# ---------- Shared JS helpers ----------
+_HELPERS = r"""
+<script>
+function setMsg(id, txt, kind){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = txt ?? '';
+  el.className = 'small';
+  if(kind === 'error'){ el.classList.add('text-danger'); }
+  else if(kind === 'success'){ el.classList.add('text-success'); }
+  else { el.classList.add('text-muted'); }
+}
+function toBody(obj){
+  const p = new URLSearchParams();
+  Object.entries(obj).forEach(([k,v]) => p.append(k, v));
+  return p.toString();
+}
+async function getCsrf(){
+  const r = await fetch('/api/auth/csrf', {credentials:'same-origin'});
+  if(!r.ok){ throw new Error('Failed to get CSRF token'); }
+  const j = await r.json();
+  return j.csrf_token;
+}
+</script>
+"""
+
+# ---------- Agent Login (agent_code + password) ----------
+@router.get("/login/agent", response_class=HTMLResponse)
+async def login_agent_page() -> HTMLResponse:
+    body = r"""
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h3 class="mb-0">Agent Login</h3>
+    <a class="btn btn-sm btn-outline-secondary" href="/ui/">← Back</a>
+  </div>
+  <form onsubmit="return agentLogin(event, this);">
+    <div class="mb-3">
+      <label class="form-label">Agent Code</label>
+      <input name="agent_code" class="form-control" autocomplete="username" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input name="code_password" type="password" class="form-control" autocomplete="current-password" required>
+    </div>
+    <div id="agentMsg" class="small text-muted mb-2"></div>
+    <button type="submit" class="btn btn-primary">Login</button>
+  </form>
+</div>
 
 <script>
-  function show(id, el) {{
-    document.getElementById('agent').className = 'p-3 border border-top-0 ' + (id==='agent'?'d-block':'d-none');
-    document.getElementById('admin').className = 'p-3 border border-top-0 ' + (id==='admin'?'d-block':'d-none');
-    document.querySelectorAll('.nav-link').forEach(a=>a.classList.remove('active'));
-    if(el && el.classList) el.classList.add('active');
-  }}
-
-  function setMsg(text, kind='info') {{
-    const m=document.getElementById('msg');
-    m.className='alert alert-'+kind+' mt-3';
-    m.textContent=text;
-    m.classList.remove('d-none');
-  }}
-
-  function toFormBody(obj) {{
-    const p=new URLSearchParams();
-    Object.entries(obj).forEach(([k,v])=>{{ if(v!==undefined && v!==null) p.append(k, String(v)); }});
-    return p;
-  }}
-
-  async function agentLogin(form) {{
-    const body = toFormBody({{ agent_code: form.agent_code.value.trim() }});
-    const r = await fetch('/api/auth/login/agent', {{ method:'POST', headers: {{'Content-Type':'application/x-www-form-urlencoded'}}, body }});
-    const j = await r.json();
-    if(!r.ok){{ setMsg(j.detail||'Login failed', 'danger'); return false; }}
-    window.location.href = '/ui/';
+async function agentLogin(e, form){
+  e.preventDefault();
+  const code = (form.agent_code.value ?? '').trim();
+  const pass = (form.code_password.value ?? '');
+  if(!code || !pass){
+    setMsg('agentMsg','Agent Code and Password are required','error');
     return false;
-  }}
-
-  async function adminLogin(form) {{
-    const body = toFormBody({{
-      user_id: form.user_id.value||'',
-      email: form.email.value||'',
-      password: form.password.value
-    }});
-    const r = await fetch('/api/auth/login/user', {{ method:'POST', headers: {{'Content-Type':'application/x-www-form-urlencoded'}}, body }});
-    const j = await r.json();
-    if(!r.ok){{ setMsg(j.detail||'Login failed', 'danger'); return false; }}
-    window.location.href = '/ui/';
-    return false;
-  }}
+  }
+  try{
+    const csrf = await getCsrf();
+    const r = await fetch('/api/auth/login/agent', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
+      body: toBody({agent_code: code, password: pass}),
+      credentials:'same-origin'
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=> ({}));
+      setMsg('agentMsg', (j.detail ?? 'Login failed'), 'error');
+      return false;
+    }
+    setMsg('agentMsg','Login OK, redirecting...','success');
+    window.location.href = '/ui/agent/';
+  }catch(err){
+    setMsg('agentMsg', (String(err) || 'Login error'),'error');
+  }
+  return false;
+}
 </script>
-</body>
-</html>
-    """
-    return HTMLResponse(content=html)
+""" + _HELPERS
+    return HTMLResponse(_base_html(body))
 
-@router.get("/agent/upload")
-def agent_upload_page_redirect():
-    return RedirectResponse(url="/ui/")
+# ---------- Admin Login (user_id + password) ----------
+def _admin_login_body() -> str:
+    return r"""
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h3 class="mb-0">Admin Login</h3>
+    <a class="btn btn-sm btn-outline-secondary" href="/ui/">← Back</a>
+  </div>
+  <form onsubmit="return adminLogin(event, this);">
+    <div class="mb-3">
+      <label class="form-label">User ID</label>
+      <input name="user_id" type="number" class="form-control" autocomplete="username" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input name="password" type="password" class="form-control" autocomplete="current-password" required>
+    </div>
+    <div id="adminMsg" class="small text-muted mb-2"></div>
+    <button type="submit" class="btn btn-primary">Login</button>
+  </form>
+</div>
+
+<script>
+async function adminLogin(e, form){
+  e.preventDefault();
+  const uid = (form.user_id.value ?? '').trim();
+  const pass = (form.password.value ?? '');
+  if(!uid || !pass){
+    setMsg('adminMsg','User ID and Password are required','error');
+    return false;
+  }
+  try{
+    const csrf = await getCsrf();
+    const r = await fetch('/api/auth/login/user', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
+      body: toBody({user_id: uid, password: pass}),
+      credentials:'same-origin'
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=> ({}));
+      setMsg('adminMsg', (j.detail ?? 'Login failed'), 'error');
+      return false;
+    }
+    setMsg('adminMsg','Login OK, checking role...','success');
+    const meResp = await fetch('/api/auth/me', { credentials:'same-origin' });
+    if(!meResp.ok){
+      setMsg('adminMsg', 'Could not verify session after login','error');
+      return false;
+    }
+    const me = await meResp.json();
+    const role = String(me?.identity?.role ?? '').toLowerCase();
+    if (role === 'admin') window.location.href = '/ui/admin/';
+    else if (role === 'superuser') window.location.href = '/ui/superuser/';
+    else if (role === 'agent') window.location.href = '/ui/agent/';
+    else window.location.href = '/ui/';
+  }catch(err){
+    setMsg('adminMsg', (String(err) || 'Login error'),'error');
+  }
+  return false;
+}
+</script>
+""" + _HELPERS
+
+# ---------- Superuser Login (user_id + password) ----------
+def _superuser_login_body() -> str:
+    return r"""
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h3 class="mb-0">Superuser Login</h3>
+    <a class="btn btn-sm btn-outline-secondary" href="/ui/">← Back</a>
+  </div>
+  <form onsubmit="return suLogin(event, this);">
+    <div class="mb-3">
+      <label class="form-label">User ID</label>
+      <input name="user_id" type="number" class="form-control" autocomplete="username" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Password</label>
+      <input name="password" type="password" class="form-control" autocomplete="current-password" required>
+    </div>
+    <div id="suMsg" class="small text-muted mb-2"></div>
+    <button type="submit" class="btn btn-primary">Login</button>
+  </form>
+</div>
+
+<script>
+async function suLogin(e, form){
+  e.preventDefault();
+  const uid = (form.user_id.value ?? '').trim();
+  const pass = (form.password.value ?? '');
+  if(!uid || !pass){
+    setMsg('suMsg','User ID and Password are required','error');
+    return false;
+  }
+  try{
+    const csrf = await getCsrf();
+    const r = await fetch('/api/auth/login/user', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'X-CSRF-Token': csrf },
+      body: toBody({user_id: uid, password: pass}),
+      credentials:'same-origin'
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=> ({}));
+      setMsg('suMsg', (j.detail ?? 'Login failed'), 'error');
+      return false;
+    }
+    setMsg('suMsg','Login OK, checking role...','success');
+    const meResp = await fetch('/api/auth/me', { credentials:'same-origin' });
+    if(!meResp.ok){
+      setMsg('suMsg', 'Could not verify session after login','error');
+      return false;
+    }
+    const me = await meResp.json();
+    const role = String(me?.identity?.role ?? '').toLowerCase();
+    if (role === 'superuser') window.location.href = '/ui/superuser/';
+    else if (role === 'admin') window.location.href = '/ui/admin/';
+    else if (role === 'agent') window.location.href = '/ui/agent/';
+    else window.location.href = '/ui/';
+  }catch(err){
+    setMsg('suMsg', (String(err) || 'Login error'),'error');
+  }
+  return false;
+}
+</script>
+""" + _HELPERS
+
+@router.get("/login/admin", response_class=HTMLResponse)
+async def login_admin_page() -> HTMLResponse:
+    return HTMLResponse(_base_html(_admin_login_body()))
+
+@router.get("/login/superuser", response_class=HTMLResponse)
+async def login_superuser_page() -> HTMLResponse:
+    return HTMLResponse(_base_html(_superuser_login_body()))

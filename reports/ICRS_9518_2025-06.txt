@@ -1,0 +1,11 @@
+Insurance Commission Reconciliation Report
+Agent: 9518 (9518)
+Period: Jun 2025
+Generated: 2026-01-11 11:37:10
+
+Policies reported: 775
+Total premium: 81549.75
+Total commission reported: 7088.14
+Total commission expected: 5570.44
+Variance amount: 1517.7
+Variance percentage: 27.25%

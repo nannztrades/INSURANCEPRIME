@@ -1,0 +1,235 @@
+.FFFFFFFFF.F.FF...F...........................F.                         [100%]
+================================== FAILURES ===================================
+____________________ test_admin_create_agent_ok_with_csrf _____________________
+
+client = <starlette.testclient.TestClient object at 0x000002634A93BA60>
+
+    def test_admin_create_agent_ok_with_csrf(client):
+        csrf = client.get("/api/auth/csrf").json()["csrf_token"]
+        r = client.post(
+            "/api/admin/agents",
+            json={"agent_code": "AGX", "agent_name": "Agent X", "is_active": 1},
+            headers={"X-CSRF-Token": csrf},
+        )
+>       assert r.status_code == HTTPStatus.OK
+E       assert 403 == <HTTPStatus.OK: 200>
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+E        +  and   <HTTPStatus.OK: 200> = HTTPStatus.OK
+
+tests\test_admin_agents_csrf.py:20: AssertionError
+___________________________ test_list_uploads_empty ___________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634A9C2790>
+
+    def test_list_uploads_empty(client):
+        r = client.get("/api/admin/uploads")
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_admin_reports_smoke.py:7: AssertionError
+_________________________ test_list_statements_empty __________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634160CD30>
+
+    def test_list_statements_empty(client):
+        r = client.get("/api/admin/statements", params={"agent_code": "AG001", "month_year": "Jun 2025"})
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_admin_reports_smoke.py:14: AssertionError
+__________________________ test_list_schedule_empty ___________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA60220>
+
+    def test_list_schedule_empty(client):
+        r = client.get("/api/admin/schedule", params={"agent_code": "AG001"})
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_admin_reports_smoke.py:20: AssertionError
+_________________________ test_list_terminated_empty __________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA54070>
+
+    def test_list_terminated_empty(client):
+        r = client.get("/api/admin/terminated", params={"agent_code": "AG001"})
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_admin_reports_smoke.py:25: AssertionError
+_________________________ test_active_policies_empty __________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634A990580>
+
+    def test_active_policies_empty(client):
+        r = client.get("/api/admin/active-policies", params={"agent_code": "AG001"})
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_admin_reports_smoke.py:30: AssertionError
+__________________ test_agent_statements_uses_agent_context ___________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA78DC0>
+
+    def test_agent_statements_uses_agent_context(client):
+        # Simulate agent cookie; our decode_token() returns an agent identity
+        client.cookies.set(TOKEN_COOKIE_NAME, "agent-token", path="/")
+        r = client.get("/api/agent/statements", params={"month_year": "Jun 2025"})
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_agent_and_superuser_endpoints.py:11: AssertionError
+______________________ test_superuser_audit_flags_empty _______________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA6D8E0>
+
+    def test_superuser_audit_flags_empty(client):
+        client.cookies.set(TOKEN_COOKIE_NAME, "superuser-token", path="/")
+        r = client.get("/api/superuser/audit-flags", params={"agent_code": "AG001"})
+>       assert r.status_code == 200
+E       assert 403 == 200
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+
+tests\test_agent_and_superuser_endpoints.py:17: AssertionError
+____________________ test_agent_me_reports_agent_identity _____________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA84D00>
+
+    def test_agent_me_reports_agent_identity(client):
+        r = client.get("/api/agent/me")
+>       assert r.status_code == HTTPStatus.OK
+E       assert 403 == <HTTPStatus.OK: 200>
+E        +  where 403 = <Response [403 Forbidden]>.status_code
+E        +  and   <HTTPStatus.OK: 200> = HTTPStatus.OK
+
+tests\test_agent_me.py:8: AssertionError
+____________________ test_login_agent_ok_with_csrf_header _____________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA8E100>
+
+    def test_login_agent_ok_with_csrf_header(client):
+        csrf = client.get("/api/auth/csrf").json()["csrf_token"]
+        r = client.post(
+            "/api/auth/login/agent",
+            headers={"X-CSRF-Token": csrf},
+            data={"agent_code": "AG001", "password": "pass123"},
+        )
+>       assert r.status_code == HTTPStatus.OK
+E       assert 404 == <HTTPStatus.OK: 200>
+E        +  where 404 = <Response [404 Not Found]>.status_code
+E        +  and   <HTTPStatus.OK: 200> = HTTPStatus.OK
+
+tests\test_auth_csrf_requirements.py:17: AssertionError
+_________________________ test_agent_login_happy_path _________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA89FA0>
+
+    def test_agent_login_happy_path(client):
+        # First fetch CSRF
+        csrf = client.get("/api/auth/csrf").json()["csrf_token"]
+        # Attempt login
+        r = client.post(
+            "/api/auth/login/agent",
+            headers={"X-CSRF-Token": csrf},
+            data={"agent_code": "AG001", "password": "pass123"},
+        )
+>       assert r.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests\test_auth_flow.py:25: AssertionError
+_________________________ test_admin_login_happy_path _________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AAAED60>
+
+    def test_admin_login_happy_path(client):
+        csrf = client.get("/api/auth/csrf").json()["csrf_token"]
+        r = client.post(
+            "/api/auth/login/user",
+            headers={"X-CSRF-Token": csrf},
+            data={"user_id": 201, "password": "pass123"},
+        )
+>       assert r.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests\test_auth_flow.py:39: AssertionError
+_________________ test_parser_db_integration_handles_db_down __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002634AA78190>
+
+    def test_parser_db_integration_handles_db_down(monkeypatch):
+        from src.ingestion import parser_db_integration as pdi
+    
+        # Simulate DB down: get_conn raises
+        monkeypatch.setattr("src.ingestion.db.get_conn", lambda: (_ for _ in ()).throw(Exception("DB down")))
+    
+        rows = [
+            {"policy_no": "P001", "holder": "John Doe", "MONTH_YEAR": "Jun 2025", "premium": "10.00"},
+            {"policy_no": "P002", "holder": "Jane Doe", "MONTH_YEAR": "Jun 2025", "premium": "20.00"},
+        ]
+    
+>       summary = pdi.ParserDBIntegration().process(
+            doc_type_key="statement",
+            agent_code="9518",
+            agent_name="Agent 9518",
+            df_rows=rows,
+            file_path=Path("D:/PROJECT/INSURANCELOCAL/data/incoming/statement.pdf"),
+            month_year_hint="Jun 2025",
+        )
+
+tests\test_parser_db_integration_unit.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\ingestion\parser_db_integration.py:109: in process
+    file_hash = _sha256_of_file(file_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = WindowsPath('D:/PROJECT/INSURANCELOCAL/data/incoming/statement.pdf')
+
+    def _sha256_of_file(path: Path) -> str:
+        h = hashlib.sha256()
+>       with open(path, "rb") as f:
+E       FileNotFoundError: [Errno 2] No such file or directory: 'D:\\PROJECT\\INSURANCELOCAL\\data\\incoming\\statement.pdf'
+
+src\ingestion\parser_db_integration.py:66: FileNotFoundError
+___________________________ test_oversize_rejected ____________________________
+
+client = <starlette.testclient.TestClient object at 0x000002634AA841F0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002634AA842E0>
+
+    def test_oversize_rejected(client, monkeypatch):
+        import src.api.uploads_secure as us
+        monkeypatch.setattr(us, "_require_uploader", lambda req, ac: None, raising=True)
+        big = b"%PDF-1.4\n" + b"x" * (5 * 1024 * 1024 + 1)
+        files = {"file": ("big.pdf", io.BytesIO(big), "application/pdf")}
+        data = {"agent_code": "9518", "month_year": "Jun 2025"}
+        r = client.post("/api/uploads-secure/statement", files=files, data=data)
+>       assert r.status_code == 413
+E       assert 400 == 413
+E        +  where 400 = <Response [400 Bad Request]>.status_code
+
+tests\test_uploads_secure_unit.py:25: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  pypdf._reader:_utils.py:434 EOF marker not found
+=========================== short test summary info ===========================
+FAILED tests/test_admin_agents_csrf.py::test_admin_create_agent_ok_with_csrf
+FAILED tests/test_admin_reports_smoke.py::test_list_uploads_empty - assert 40...
+FAILED tests/test_admin_reports_smoke.py::test_list_statements_empty - assert...
+FAILED tests/test_admin_reports_smoke.py::test_list_schedule_empty - assert 4...
+FAILED tests/test_admin_reports_smoke.py::test_list_terminated_empty - assert...
+FAILED tests/test_admin_reports_smoke.py::test_active_policies_empty - assert...
+FAILED tests/test_agent_and_superuser_endpoints.py::test_agent_statements_uses_agent_context
+FAILED tests/test_agent_and_superuser_endpoints.py::test_superuser_audit_flags_empty
+FAILED tests/test_agent_me.py::test_agent_me_reports_agent_identity - assert ...
+FAILED tests/test_auth_csrf_requirements.py::test_login_agent_ok_with_csrf_header
+FAILED tests/test_auth_flow.py::test_agent_login_happy_path - assert 404 == 200
+FAILED tests/test_auth_flow.py::test_admin_login_happy_path - assert 404 == 200
+FAILED tests/test_parser_db_integration_unit.py::test_parser_db_integration_handles_db_down
+FAILED tests/test_uploads_secure_unit.py::test_oversize_rejected - assert 400...
+14 failed, 34 passed in 9.06s

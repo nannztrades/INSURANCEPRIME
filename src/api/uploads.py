@@ -1,4 +1,4 @@
-
+﻿
 # src/api/uploads.py
 from __future__ import annotations
 from datetime import datetime
@@ -8,7 +8,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 
 from src.ingestion.parser_db_integration import ParserDBIntegration
 from src.services.auth_service import decode_token, TOKEN_COOKIE_NAME
-from src.parser.parser_db_ready_fixed_Version4 import (
+from src.parser.parser_v4_periodized import (
     extract_statement_data,
     extract_schedule_data,
     extract_terminated_data,
